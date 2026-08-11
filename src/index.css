@@ -1,25 +1,128 @@
+/* ============================================================================
+   Design tokens — generated from Figma "Web Design System" › Color
+   (file 543D9F8zQjKF5tN4tTN1ms, node 3673:10106).
+   Values are the design system's default (Dark) mode. Light-mode values can be
+   pulled the same way by selecting a Light section and re-running extraction.
+   ============================================================================ */
 :root {
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --border: #e6e8ec;
-  --text: #16181d;
-  --muted: #6b7280;
-  --accent: #6366f1;
+  /* Brand */
+  --color-primary: #00d0ff;          /* Primary / Sea */
+  --color-primary-hover: #80e7ff;
 
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Grayscale */
+  --color-gray-10: #f5f9fa;
+  --color-gray-50: #eef4f6;
+  --color-gray-100: #e8eff2;
+  --color-gray-200: #d0d6d7;
+  --color-gray-300: #bec3c6;
+  --color-gray-400: #9fa5a7;
+  --color-gray-500: #7e8486;
+  --color-gray-900: #1d1f20;
+  --color-gray-950: #141515;
+  --color-white: #ffffff;
+
+  /* Product grayscale */
+  --color-product-gray-200: #eaebef;
+  --color-product-gray-800: #575961;
+  --color-product-gray-950: #292a30;
+
+  /* Background */
+  --color-bg-primary: #141515;
+  --color-bg-secondary: #1D1F20;
+  --color-bg-panel: #ffffff;
+  --color-bg-editor: #f5f9fa;
+  --color-bg-overlay: #ffffffcc;
+  --color-bg-light-overlay: #ffffff66;
+
+  /* Text */
+  --color-text-primary: #eef4f6;
+  --color-text-secondary: #9fa5a7;
+  --color-text-tertiary: #7e8486;
+  --color-text-disabled: #595e5e;
+  --color-text-on-primary: #1d1f20;
+  --color-text-on-secondary: #f5f9fa;
+  --color-text-error-on-primary: #f5f9fa;
+  --color-text-error-on-secondary: #ff423b;
+
+  /* Icon */
+  --color-icon-primary-on-dark: #e8eff2;
+  --color-icon-secondary-on-dark: #d0d6d7;
+  --color-icon-tertiary-on-dark: #bec3c6;
+  --color-icon-primary-on-light: #f5f9fa;
+
+  /* Stroke */
+  --color-stroke-primary: #ffffff1a;
+  --color-stroke-secondary: #ffffff1a;
+  --color-stroke-tertiary: #ffffff1a;
+  --color-stroke-active: #f5f9fa;
+
+  /* Button */
+  --color-button-primary: #00d0ff;
+  --color-button-primary-hover: #80e7ff;
+  --color-button-secondary: #1d1f20;
+  --color-button-secondary-hover: #e8eff2;
+  --color-button-secondary-on-modal: #ffffff1a;
+  --color-button-tertiary-hover: #ffffff1a;
+  --color-button-quarternary-hover: #ffffff1a;
+  --color-button-primary-error: #ff423b;
+  --color-button-primary-error-hover: #d00000;
+  --color-button-secondary-error: #1d1f20;
+  --color-button-secondary-error-hover: #ffffff1a;
+  --color-button-disabled: #2a2c2d;
+  --color-button-overlay-light: #ffffff33;
+  --color-button-overlay-light-hover: #ffffff66;
+  --color-button-active: #ffffff;
+
+  /* Editor surfaces (mirage app resolves these slightly darker than the DS file) */
+  --color-surface: #1d1f20;          /* panels, secondary buttons */
+  --color-surface-hover: #333437;    /* hovered / active secondary */
+  --color-hairline: rgba(255, 255, 255, 0.1);   /* 0.5px borders everywhere */
+  --color-grey-950: #131417;                    /* darker editor container */
+
+  /* Track colors — solid 100% (kept for future use / recoloring) */
+  --color-caption-purple: rgba(108, 77, 247, 0.25);              /* avatar 1 (Track/Captions) */
+  --color-caption-pink: rgba(255, 155, 178, 0.25);          /* avatar 2 (Track/Music) */
+  --color-caption-green: rgba(70, 231, 180, 0.25);            /* avatar 3 (Track/Transitions) */
+  --color-caption-blue: rgba(0, 208, 255, 0.2);   /* camera-shot styles (#00D0FF 20%) */
+
+  /* Spacing scale (pt tokens from the design) */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Typography (design uses "Denim INK"; falling back to Inter until the font is provided) */
+  --font-brand: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --tracking-body: 0.025em;   /* 2.5% — 13px body */
+  --tracking-heading: 0.01em; /* 1% — 18px heading */
+
+  /* Legacy aliases consumed by the starter App — mapped onto design tokens */
+  --bg: var(--color-bg-primary);
+  --surface: var(--color-surface);
+  --border: var(--color-hairline);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-secondary);
+  --accent: var(--color-primary);
+
+  font-family: var(--font-brand);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #171a21;
-    --border: #262a33;
-    --text: #eef1f5;
-    --muted: #98a1b3;
-    --accent: #7c83ff;
-  }
 }
 
 * { box-sizing: border-box; }
