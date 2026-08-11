@@ -17,10 +17,12 @@ npm run lint     # oxlint
 - **Frontend-only.** Handle all interactivity with client-side React state
   (`useState`, `useContext`). Never add a backend, database, or network calls
   unless explicitly asked.
-- **Icons: use `lucide-react`.** Import named icons, e.g.
-  `import { Camera, X } from 'lucide-react'`. Do NOT hand-draw SVG icons.
-  If a specific design-system icon is needed, ask for the Figma link / asset and
-  export it, rather than approximating.
+- **Icons: the custom icon library is the standard.** Always use the project's
+  own icon set (exported from Figma into `src/assets/icons/`) when the design's
+  icon exists there — see "Custom icon set" below. Fall back to
+  `@phosphor-icons/react` ONLY for generic glyphs the custom set doesn't have:
+  `import { Camera } from '@phosphor-icons/react'`, using the `weight` prop
+  (`thin | light | regular | bold | fill | duotone`). Do NOT hand-draw SVG icons.
 - **Images/assets:** put static files in `public/assets/` and reference them as
   `/assets/name.png`, or import from `src/assets/` for bundled assets.
 - **One screen per component.** Give each screen its own component file plus its
@@ -29,6 +31,19 @@ npm run lint     # oxlint
 - **Design fidelity:** when implementing a Figma design, pull real values
   (colors, spacing, positions) rather than eyeballing; commit exported image
   assets rather than relying on temporary URLs.
+
+## Custom icon set (from Figma)
+
+Alongside Phosphor, this project has a bespoke icon library that lives in Figma.
+To use those icons in code:
+
+1. Export each icon as **SVG** from Figma and commit under `src/assets/icons/`.
+2. Prefer inline React SVG components (so `color`/`size` can be controlled via
+   props and `currentColor`) over `<img>` tags.
+3. Keep names matching the Figma component names so design ↔ code stays traceable.
+
+Rule of thumb: reach for the **custom icon** when the design uses it; fall back to
+**Phosphor** for generic UI glyphs not covered by the custom set.
 
 ## Building a new screen from Figma (quick recipe)
 

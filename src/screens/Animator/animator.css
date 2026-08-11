@@ -1,0 +1,965 @@
+/* ============================================================================
+   Animator screen — base frame. Layout only; visual constants come from tokens
+   (src/index.css) and reusable primitives (src/ui/ui.css).
+   ============================================================================ */
+.anim {
+  --rail: 42px; /* sticky left column: camera-shot icon + avatars */
+
+  /* Timeline strokes. One token drives every horizontal track divider, the rail
+     divider and the ruler underline so they read as a single grid. It is
+     deliberately fainter than the node handles below, which need to sit on top
+     of that grid and read as foreground. */
+  --anim-stroke-track: rgba(255, 255, 255, 0.08);
+
+  /* Node connectors, drawn from the product's own gray family rather than raw
+     white. Every gray in this UI is cool-tinted (Oklch hue ~220°, chroma
+     ~0.008); plain white-alpha over the near-neutral track resolved to a dead
+     neutral (chroma ~0.001), which is why the connectors read as foreign.
+     Their weight is placed on the timeline's lightness ladder, in CIE L*:
+       grid 16 · ruler ticks 37 · LINE 40 · labels 55 · DOT 67 · text 96
+     so a connector never outshouts the text around it — the dot lands exactly
+     at secondary-text weight instead of the 79 it sat at before, which had it
+     competing with the labels. It also leaves room for the jump to white on
+     selection to actually read (the old dot moved only 79 → 100). */
+  --anim-node-line: color-mix(in srgb, var(--color-text-tertiary) 66.5%, transparent);
+  --anim-node-dot: var(--color-text-secondary);
+
+  /* A selected clip's body composites its lane's track colour over this lighter
+     base, so the clip reads as foreground inside the white selection frame
+     instead of sinking into the timeline. Reproduces the design's #1d4750
+     (camera shots) and #5b4248 (scripts) exactly, and derives the remaining
+     avatar tints from the same rule. */
+  --anim-clip-selected-base: #242524;
+
+  /* Height of a selected clip's frame, and so of its two trim handles — every
+     track's selection is built to this one number, which is what keeps the
+     handles flush with the frame's ends across all three of them. The body
+     inside stays 32px, leaving the design's 2px white reveal above and below. */
+  --anim-clip-h: 36px;
+
+  /* Ruler height (border-box, its bottom stroke included). Sized to the
+     current-time pill so the strip is exactly as tall as the pill sitting in
+     it: 16px line box (the same one the ruler labels use) + 2px padding
+     top/bottom. */
+  --anim-ruler-block: 20px;
+
+  /* Chat sidebar width + the shared easing for its collapse. */
+  --chat-w: 338px;
+  --chat-anim: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  height: 100dvh;
+  display: flex;
+  padding: var(--space-8); /* consistent frame around the whole window */
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+/* The single edge-to-edge window: header sits directly on top of the workspace
+   with no gap or divider between them. */
+.anim-window {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* --- Header --------------------------------------------------------------- */
+.anim-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-12) var(--space-16);
+  flex: 0 0 auto;
+  /* Separates the project title bar from the workspace below it. */
+  border-bottom: 0.5px solid var(--color-hairline);
+}
+.anim-header__group { display: flex; align-items: center; gap: var(--space-8); }
+.anim-header__title {
+  font-size: var(--fs-18);
+  font-weight: 500;
+  letter-spacing: var(--tracking-heading);
+  color: var(--color-text-primary);
+  margin-left: var(--space-8);
+}
+
+/* --- Body: the workspace, edge-to-edge inside the window (no floating inset) */
+.anim-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.anim-shell {
+  height: 100%;
+  display: flex;
+  min-height: 0;
+}
+
+/* --- Chat panel (right stroke separates it from the editor) ---------------
+   The panel is a clipping shell around a fixed-width inner block. Collapsing
+   animates the shell's width to 0 while the inner block slides out to the left,
+   so the content keeps its layout on the way instead of reflowing as it
+   narrows. The editor picks up the freed space on its own — `.anim-main` is
+   `flex: 1 1 auto`, so it grows to the full width as the shell shrinks. */
+.anim-chat {
+  flex: 0 0 var(--chat-w);
+  width: var(--chat-w);
+  min-height: 0;
+  overflow: hidden;
+  border-right: 0.5px solid var(--color-hairline);
+  transition:
+    flex-basis var(--chat-anim),
+    width var(--chat-anim),
+    border-right-color var(--chat-anim);
+}
+.anim-chat[data-collapsed] {
+  flex-basis: 0;
+  width: 0;
+  border-right-color: transparent;
+}
+.anim-chat__inner {
+  width: var(--chat-w);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-12);
+  transition: transform var(--chat-anim);
+}
+.anim-chat[data-collapsed] .anim-chat__inner { transform: translateX(-100%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-chat,
+  .anim-chat__inner { transition: none; }
+}
+.anim-chat__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  /* span the full panel width so the divider reaches both edges */
+  margin: 0 calc(var(--space-12) * -1);
+  padding: 0 var(--space-8) 0 var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+  flex: 0 0 auto;
+}
+.anim-chat__tab { font-size: var(--fs-16); font-weight: 500; letter-spacing: var(--tracking-heading); }
+.anim-chat__body { flex: 1 1 auto; min-height: 0; }
+
+.anim-chat__composer {
+  flex: 0 0 auto;
+  border-radius: var(--radius-xl);
+  padding: var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+.anim-chat__placeholder {
+  margin: 0;
+  padding-left: var(--space-12);
+  border-left: 1px solid var(--color-primary);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-tertiary);
+}
+.anim-chat__composer-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.anim-chat__composer-left { display: flex; align-items: center; gap: var(--space-8); }
+.anim-chat__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-button-disabled);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
+/* --- Main editor ---------------------------------------------------------- */
+.anim-main { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+/* Canvas: a transparent tool pillar on the left, the centered preview, and the
+   play / zoom controls floating just outside the video frame. */
+.anim-canvas {
+  position: relative;
+  z-index: 1; /* keep the floating inspector above the timeline below it */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+/* Transparent vertical pillar: action pills at the top, play at the bottom. */
+.anim-toolcol {
+  flex: 0 0 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 2;
+}
+/* Dedicated container wrapping the action icons. Uses the shared `.surface`
+   class so it sits on the exact same surface tone as the play and zoom
+   controls that flank it. */
+.anim-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6);
+  border-radius: var(--radius-pill);
+}
+/* Active tool: white pill with the icon as a dark outline (its fill is
+   transparent, so the pill shows through) using the darkest gray for the stroke. */
+.anim-toolbar .icon-btn--selected { color: var(--color-gray-900); }
+/* Idle tools get a visible hover — the default ghost hover tone matches the
+   toolbar's own surface, so lift it to the hover tone instead. */
+.anim-toolbar .icon-btn--ghost:hover { background: var(--color-surface-hover); }
+
+.anim-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding-left: 3px; /* optically center the triangle */
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.anim-preview-wrap { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.anim-preview {
+  position: relative;
+  aspect-ratio: 764 / 430;
+  max-height: 100%;
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.anim-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* Zoom controls pinned to the bottom-right corner, outside the video frame. */
+.anim-zoom {
+  position: absolute;
+  right: var(--space-16);
+  bottom: var(--space-16);
+  display: flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-6);
+  border-radius: 62px;
+  z-index: 2;
+}
+
+/* --- Timeline resizer (splitter between the preview and the timeline) ------ */
+/* Height is mirrored by RESIZER_HEIGHT in useResizableTimeline.ts. */
+.anim-resizer {
+  position: relative;
+  flex: 0 0 auto;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  touch-action: none; /* let the handle own vertical drags on touch devices */
+}
+/* Widen the hit area past the 10px the handle actually occupies. */
+.anim-resizer::before { content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; }
+.anim-resizer__grip {
+  width: 48px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-hairline);
+  transition: background 120ms ease, width 120ms ease;
+}
+.anim-resizer:hover .anim-resizer__grip,
+.anim-resizer[data-resizing] .anim-resizer__grip { background: var(--color-text-tertiary); width: 64px; }
+.anim-resizer:focus-visible { outline: none; }
+.anim-resizer:focus-visible .anim-resizer__grip { background: var(--color-primary); width: 64px; }
+
+/* While dragging, hold the resize cursor no matter what the pointer is over. */
+body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; user-select: none !important; }
+
+/* --- Timeline area (top + bottom strokes) --------------------------------- */
+/* Height is driven by the resizer (inline style); the tracks take up the slack
+   and scroll internally once the content no longer fits. */
+.anim-timeline {
+  position: relative; /* anchors the non-scrolling playhead */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 0.5px solid var(--color-hairline);
+  border-bottom: 0.5px solid var(--color-hairline);
+  padding: var(--space-8) 0;
+}
+
+/* --- Timeline ruler ------------------------------------------------------- */
+/* The ruler carries its own bottom stroke, so the separator sits flush on the
+   ruler's bottom edge rather than floating in the gap above the tracks. */
+.anim-ruler {
+  position: relative;
+  flex: 0 0 auto;
+  height: var(--anim-ruler-block);
+  border-bottom: 0.5px solid var(--anim-stroke-track);
+}
+.anim-ruler__ticks { display: flex; padding-left: var(--rail); height: 100%; }
+.anim-ruler__seg { position: relative; display: flex; align-items: flex-start; flex: 0 0 auto; }
+.anim-ruler__label { font-size: var(--fs-12); color: var(--color-text-tertiary); line-height: 16px; }
+.anim-ruler__dots { position: absolute; left: 0; right: 0; top: 7px; display: flex; justify-content: space-around; padding: 0 12%; }
+.anim-ruler__dot { width: 1.5px; height: 1.5px; border-radius: 50%; background: var(--color-text-tertiary); opacity: 0.6; }
+.anim-ruler__time {
+  position: absolute;
+  top: -2px;
+  transform: translateX(-50%);
+  font-size: var(--fs-12);
+  /* Same line box as .anim-ruler__label, so the pill's height is a fixed 20px
+     (16 + 2 + 2) rather than font-metric dependent — that is the number
+     --anim-ruler-block is set from. */
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--color-text-on-primary);
+  background: var(--color-white);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-6);
+  white-space: nowrap;
+  z-index: 7;
+}
+
+/* --- Tracks --------------------------------------------------------------- */
+.anim-tracks {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+.anim-tracks::-webkit-scrollbar { display: none; } /* WebKit */
+.anim-tracks__scroll { position: relative; width: max-content; min-width: 100%; }
+
+/* Every layer is a flex row [rail | content], separated from the next by a
+   full-width hairline at its bottom edge. */
+.anim-layer { display: flex; border-bottom: 0.5px solid var(--anim-stroke-track); }
+
+/* Sticky left rail shared by every layer; a hairline divides it from the tracks. */
+.anim-rail {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  flex: 0 0 var(--rail);
+  width: var(--rail);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-primary);
+}
+/* The rail's vertical stroke is an overlay rather than a border so it runs
+   unbroken through the layer's bottom hairline (bottom: -0.5px reaches into
+   that band). Sitting inside the rail's z-index:5 stacking context, it paints
+   above the layer border — the horizontal track dividers cross behind it
+   instead of over it, at any horizontal scroll position. */
+.anim-rail::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: -0.5px;
+  right: 0;
+  width: 0.5px;
+  background: var(--anim-stroke-track);
+}
+/* Rail icons (e.g. the camera-shot target) read as a quiet secondary element. */
+.anim-rail .icon-btn { color: var(--color-text-tertiary); }
+
+/* Shared chip metrics: every track/chip is the same 36px height, centered in a
+   52px lane. Layer 1 (scenes) is the one exception the design keeps at 32px. */
+.anim-scene,
+.anim-script,
+.anim-emoji {
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  white-space: nowrap;
+}
+
+/* Layer 1: camera-shot styles */
+.anim-scenebar { height: 52px; --anim-clip-tint: var(--color-caption-blue); }
+.anim-scenebar__chips { position: relative; display: flex; align-items: center; gap: 2px; padding-left: 10px; overflow: visible; }
+.anim-scene {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-8);
+  background: var(--anim-clip-tint);
+  overflow: hidden;
+  cursor: pointer;
+  font-family: var(--font-brand);
+  text-align: left;
+}
+.anim-scene__body { position: relative; display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
+/* Eye-contact keyframe: a small diamond pinned at the cut's share of the shot's
+   run. Sits above the label but ignores pointer events, so the whole clip stays
+   one click target. */
+.anim-scene__keyframe {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  transform: translateY(-50%) rotate(45deg);
+  background: var(--color-white);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.anim-scene__body svg { flex: 0 0 auto; color: var(--color-primary); }
+.anim-scene__label { overflow: hidden; text-overflow: ellipsis; }
+
+/* Active selection: a white frame with trim handles wrapping a darkened clip.
+   Shared by both tracks — see the script selection below. */
+.anim-scene[data-selected] {
+  height: 36px;
+  padding: 0;
+  background: var(--color-white);
+  border-color: transparent;
+  justify-content: space-between;
+}
+/* The scene chip is width-constrained, so its body absorbs the slack the two
+   handles leave; the script chip hugs its text and doesn't need this. */
+.anim-scene[data-selected] .anim-scene__body { flex: 1 1 auto; }
+
+/* The selected clip body, shared by both tracks. */
+.anim-scene[data-selected] .anim-scene__body,
+.anim-avatar-row .anim-script[data-selected] .anim-script__body {
+  align-self: center;
+  height: 32px;
+  padding: 0 var(--space-8);
+  background-color: var(--anim-clip-selected-base);
+  background-image: linear-gradient(var(--anim-clip-tint), var(--anim-clip-tint));
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+/* Trim handles: white end caps, each with a dark centered grip line. Identical
+   on both tracks — only the positioning differs, because the scene chip has a
+   fixed width (handles sit in flow and the body gives up the space) while the
+   script chip hugs its text (handles are laid outside, see below, so the clip
+   keeps its exact idle length). Either way frame + handles read as one
+   6px-rounded white shape. */
+.anim-scene__handle,
+.anim-script__handle,
+.anim-emoji__handle {
+  position: relative;
+  background: var(--color-white);
+}
+/* Full frame height, not the content box: `stretch` would size the cap to the
+   36px chip minus its 1px of borders, leaving it visibly short of the ends. An
+   explicit height centred in the frame reproduces the design's over-tall end
+   caps, which it clips back to the chip height. */
+.anim-scene__handle { flex: 0 0 16px; align-self: center; height: var(--anim-clip-h); }
+.anim-scene__handle::before,
+.anim-script__handle::before,
+.anim-emoji__handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: #141515;
+}
+
+/* Layers 2-4: avatars */
+.anim-avatar-row { height: 104px; }
+/* Avatars match the 24×24 camera-track header icon exactly. */
+.anim-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 0.5px solid var(--color-hairline); }
+.anim-avatar-row__lanes { position: relative; flex: 1 1 auto; align-self: stretch; }
+.anim-lane { position: absolute; left: 0; right: 0; height: 52px; }
+.anim-lane--script { top: 0; }
+/* No hairline here: the row separator is the layer's own full-width
+   border-bottom, which lands in this exact band. A stroke here too would
+   double it (two 0.08 whites compositing to ~0.15) and — being scrolled
+   content — would slide across the sticky rail on horizontal scroll. */
+.anim-lane--interaction { top: 52px; }
+
+/* The script clip is the selection frame; `__body` is the clip itself. Idle, the
+   body is transparent and the frame supplies the fill, so the two read as one
+   chip; selected, the frame turns white and the body becomes the inner clip. */
+.anim-script {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0; /* the body owns the chip's padding; drop the button default */
+  overflow: hidden;
+  cursor: pointer;
+  font-family: var(--font-brand);
+  text-align: left;
+}
+.anim-script__body {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-8);
+  overflow: hidden;
+}
+
+/* Active selection. The clip does not move or resize: it keeps its idle left
+   edge and its text keeps the same 8px padding, so the block stays exactly as
+   long as it was. Only the frame recolours to white (leaving a 2px reveal above
+   and below the 32px body) and the two trim handles are laid outside its ends. */
+.anim-avatar-row .anim-script[data-selected] {
+  background: var(--color-white);
+  border-color: transparent;
+  overflow: visible; /* the handles sit outside the frame; __body clips the text */
+  /* Square off the frame so it meets the handles seamlessly — otherwise its own
+     rounded corners leave a notch of track showing at each junction. The
+     handles below supply the rounded ends, at the scene chip's exact radius. */
+  border-radius: 0;
+}
+/* Both hugging chips lay their handles outside their ends, so the clip keeps
+   its exact idle length and position. Centred with an explicit height rather
+   than pinned top/bottom: an absolute box resolves those against the frame's
+   PADDING box, which the chip's 1px of borders makes 2px shorter than the frame
+   — the caps would render short of the ends, and by a different amount than the
+   scene chip's. Centring spans the full frame at any device pixel ratio. */
+.anim-script__handle,
+.anim-emoji__handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--anim-clip-h);
+  width: 16px;
+}
+.anim-script__handle:first-child,
+.anim-emoji__handle:first-child {
+  left: -16px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.anim-script__handle:last-child,
+.anim-emoji__handle:last-child {
+  right: -16px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+/* Keep the playback highlight inset inside the 32px body by the same 2px it has
+   inside the 36px idle frame. */
+.anim-script[data-selected] .anim-script__word { height: 28px; }
+/* Words hug (no min-width, so the block tracks the actual text length) but keep
+   per-word padding for readable spacing and room around the playback highlight.
+   The highlight box is nearly as tall as the track so it reads clearly. */
+.anim-script__word {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  white-space: nowrap;
+  padding: 0 var(--space-2);
+  border-radius: 4px;
+  transition: background 100ms ease;
+}
+/* The word the playhead points to lights up as playback advances. */
+.anim-script__word[data-active] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* The emoji chip is built exactly like the script clip: the element itself is
+   the selection frame and `__body` is the chip. Idle the body is transparent
+   and the frame supplies the fill, so the two read as one chip. */
+.anim-emoji {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0; /* the body owns the chip's padding; drop the button default */
+  cursor: pointer;
+  font-family: var(--font-brand);
+}
+.anim-emoji__body {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 32px per the design; the frame's hairline takes the chip to its 33px. */
+  min-width: 32px;
+  height: 100%;
+  padding: 0 var(--space-8);
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Active selection — the camera-shot treatment, chip for chip: the frame turns
+   white (leaving a 2px reveal above and below the 32px body) and the two trim
+   handles are laid outside its ends, so the reaction neither moves nor
+   resizes. Lifted above the connector lines, which its handles now overlap. */
+.anim-avatar-row .anim-emoji[data-selected] {
+  z-index: 2;
+  background: var(--color-white);
+  border-color: transparent;
+  overflow: visible; /* the handles sit outside the frame */
+  /* Squared off so the frame meets the handles seamlessly; the handles supply
+     the rounded ends, at the scene chip's exact radius. */
+  border-radius: 0;
+}
+.anim-emoji[data-selected] .anim-emoji__body {
+  height: 32px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  /* Opaque, because the white frame is now behind it: the same tint the chip
+     shows at rest, composited over the track background it normally sits on.
+     For a purple row that is the design's #2a234e exactly. */
+  background-color: var(--color-bg-primary);
+  background-image: linear-gradient(var(--anim-clip-tint), var(--anim-clip-tint));
+}
+
+/* Per-avatar colors — scripts + interactions share the avatar's colour @ 25%.
+   The row publishes its tint as a variable so the chip fill and the selected
+   clip body (which composites the same tint over a lighter base) stay in sync. */
+.anim-avatar-row[data-color='purple'] { --anim-clip-tint: var(--color-caption-purple); }
+.anim-avatar-row[data-color='pink'] { --anim-clip-tint: var(--color-caption-pink); }
+.anim-avatar-row[data-color='green'] { --anim-clip-tint: var(--color-caption-green); }
+.anim-avatar-row .anim-script,
+.anim-avatar-row .anim-emoji { background: var(--anim-clip-tint); }
+
+/* Node connector lines — thin verticals linking a reaction to its script, with
+   a circular dot cap at each end where the line meets a chip. */
+.anim-nodelines { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+/* The line is a button so it selects the reaction it runs into, but a 1px
+   target is not clickable — so the element is 11px wide and transparent, and
+   paints its 1px stroke down the middle. The visible geometry is unchanged;
+   only the hit area grows. The dot caps stay centred on it via `left: 50%`. */
+.anim-nodeline {
+  position: absolute;
+  width: 11px;
+  padding: 0;
+  border: none;
+  transform: translateX(-50%);
+  background-color: transparent;
+  background-image: linear-gradient(var(--anim-node-line), var(--anim-node-line));
+  background-size: 1px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: auto; /* the container above opts every line out */
+  cursor: pointer;
+}
+/* Selected — the line and its caps go white, matching the selection frame the
+   chip at its end just picked up. */
+.anim-nodeline[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+}
+.anim-nodeline[data-selected]::before,
+.anim-nodeline[data-selected]::after { background: var(--color-white); }
+.anim-nodeline::before,
+.anim-nodeline::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--anim-node-dot);
+}
+/* Each cap is centred on the chip edge the line meets, so the endpoint reads as
+   anchored to the chip rather than floating next to it. */
+.anim-nodeline::before { top: -2.5px; }
+.anim-nodeline::after { bottom: -2.5px; }
+
+/* Playhead: a bare vertical line, no handle. It lives in the timeline rather
+   than in the scrolling track content, so it stays pinned under the ruler's
+   time pill instead of sliding away when the tracks scroll horizontally. */
+.anim-playhead {
+  position: absolute;
+  /* Offsets are measured from the timeline's padding box, so the ruler's bottom
+     stroke is the timeline padding plus the ruler height. The line starts there. */
+  top: calc(var(--space-8) + var(--anim-ruler-block));
+  bottom: var(--space-8);
+  width: 2px;
+  background: #fff;
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Shot Style inspector — floating panel shown when a first-track clip is
+   selected. Pinned to the top-right of the editor canvas.
+   ============================================================================ */
+.prop-panel {
+  position: absolute;
+  top: var(--space-16);
+  right: var(--space-16);
+  z-index: 4;
+  width: 312px;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  overflow: hidden auto;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.prop-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+  flex: 0 0 auto;
+}
+.prop-panel__title { font-size: 14px; font-weight: 500; letter-spacing: var(--tracking-heading); color: var(--color-text-primary); }
+
+.prop-panel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-10) var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+  flex: 0 0 auto;
+}
+.prop-panel__row--button {
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Match the "Shot Style" panel header height (12px padding + 32px control):
+     its 20px icons are shorter, so lift the row and center them the same way. */
+  min-height: 56px;
+}
+.prop-panel__row-icon { flex: 0 0 auto; color: var(--color-text-secondary); }
+.prop-panel__row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Interaction identity row: the reaction's emoji at the size the track draws
+   it, then its shortcode as a tag. The tag takes the row's slack so the trailing
+   edit control stays pinned right, the way `__row-title` does in the others. */
+.prop-panel__emoji { flex: 0 0 auto; font-size: 15px; line-height: var(--space-24); }
+.prop-panel__tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  padding: 0 var(--space-4);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: var(--fs-13);
+  line-height: 18px;
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Standalone divided section (e.g. the always-visible Start / End timestamps). */
+.prop-panel__section {
+  padding: var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+  flex: 0 0 auto;
+}
+
+/* Collapsible group (Eye Contact): the header row toggles the body below it.
+   The body wraps the add-a-focus control and the focus rows, so they show/hide
+   together. It is the last section, so it carries no divider. */
+.prop-panel__collapsible { flex: 0 0 auto; }
+.prop-panel__collapsible .prop-panel__row { border-bottom: none; }
+/* ...unless the design separates the header from its body, as the Script
+   panel's "Interactions" group does. Its body then takes the full 12px top
+   padding rather than tucking up under a borderless header. */
+.prop-panel__collapsible--divided > .prop-panel__row {
+  border-bottom: 0.5px solid var(--color-hairline);
+}
+.prop-panel__collapsible--divided > .prop-panel__collapsible-body {
+  padding-top: var(--space-12);
+}
+.prop-panel__chevron { transition: transform 150ms ease; }
+.prop-panel__collapsible[data-expanded] .prop-panel__chevron { transform: rotate(180deg); }
+.prop-panel__collapsible-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: var(--space-8) var(--space-12) var(--space-12);
+}
+
+.prop-panel__fields { display: flex; gap: 14px; }
+.prop-panel__field { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-8); }
+.prop-panel__label { font-size: var(--fs-13); letter-spacing: var(--tracking-body); color: var(--color-text-tertiary); }
+.prop-panel__input {
+  width: 100%;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+}
+.prop-panel__input:focus { outline: none; border-color: var(--color-primary); }
+/* Inline rename swaps into the identity row, so it drops the field chrome and
+   sits flush where the static title was. */
+.prop-panel__input--inline { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-8); }
+
+/* --- Scrubbable number fields (Figma-style) -------------------------------- */
+/* The label and the two edge strips scrub; the middle of the box stays a plain
+   text input. Splitting them this way is what lets one control both drag and
+   type without the two gestures fighting. */
+.prop-panel__input-wrap { position: relative; display: flex; }
+.prop-panel__input-wrap .prop-panel__input {
+  /* Keep the caret clear of the scrub strips sitting over the box's ends. */
+  padding-left: 18px;
+  padding-right: 18px;
+  text-align: center;
+  cursor: text;
+}
+.prop-panel__scrub {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  z-index: 1;
+  cursor: ew-resize;
+  /* The drag is a pointer gesture: stop the browser from claiming the
+     horizontal swipe for panning or text selection first. */
+  touch-action: none;
+}
+.prop-panel__scrub[data-edge='left'] { left: 0; }
+.prop-panel__scrub[data-edge='right'] { right: 0; }
+.prop-panel__label--scrub {
+  align-self: flex-start;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+/* --- Selects -------------------------------------------------------------- */
+.prop-panel__select {
+  width: 100%;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+}
+.prop-panel__select:focus { outline: none; border-color: var(--color-primary); }
+/* Chip-sized variant for the selects that sit inline in a list row, so they
+   read as the same token as the static chips beside them. */
+.prop-panel__select--chip {
+  width: auto;
+  padding: 2px var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-13);
+}
+.prop-panel__select option { background: var(--color-surface); color: var(--color-text-primary); }
+
+/* Script line: a read-only block of the spoken text with the edit affordance
+   tucked into its bottom-right corner, so a long line wraps above the control
+   rather than colliding with it. */
+.prop-panel__textfield {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-6);
+  width: 100%;
+  padding: var(--space-8) var(--space-10) var(--space-8) var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+}
+.prop-panel__textfield-text {
+  width: 100%;
+  font-size: var(--fs-13);
+  line-height: 18px;
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+}
+
+/* Focus list */
+.prop-panel__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  width: 100%;
+  height: 40px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+}
+.prop-panel__add:hover { background: var(--color-surface-hover); }
+.prop-panel__listrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: 40px;
+  padding: var(--space-8);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+}
+.prop-panel__chip {
+  padding: 2px var(--space-8);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: #fff;
+}
+/* A speaker chip carries that avatar's track colour, so an interaction stays
+   attributable to whoever performs it — not to the clip that owns the row. */
+.prop-panel__chip--purple { background: var(--color-caption-purple); }
+.prop-panel__chip--pink { background: var(--color-caption-pink); }
+.prop-panel__chip--green { background: var(--color-caption-green); }
+/* Trailing free text in a list row (the interaction verb). */
+.prop-panel__listrow-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prop-panel__arrow { color: var(--color-text-primary); font-size: var(--fs-13); }
