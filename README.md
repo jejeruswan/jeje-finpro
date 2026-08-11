@@ -1,7 +1,6 @@
 # jeje-finpro
 
-A frontend-only prototype built with **React + Vite + TypeScript**, with
-[`lucide-react`](https://lucide.dev/) for icons.
+A frontend-only prototype built for design purpose
 
 ## Getting started
 
