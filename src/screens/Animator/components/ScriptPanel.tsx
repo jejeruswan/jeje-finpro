@@ -1,21 +1,45 @@
-import { useState } from 'react';
-import { Eye, CaretDown, PencilSimple, Plus, X } from '@phosphor-icons/react';
+import { ChatText, Plus, Trash, X } from '@phosphor-icons/react';
 import { IconButton } from '../../../ui/IconButton';
-import type { ScriptChip } from '../data';
+import { MIN_CLIP_SEC, clipText, formatClock } from '../data';
+import type { AvatarRow, Interaction, ScriptClip } from '../data';
+import { TextField, TimeField } from './PanelFields';
 
 /**
- * Floating right-hand inspector for a selected script clip. Shows the spoken
- * line, its start / end times and the interactions that fire while it plays.
- * Shares the property-panel shell (`.prop-panel__*`) with `ShotStylePanel`, so
- * the two inspectors read as one surface swapping contents.
+ * The script instrument's inspector — fully editable.
+ *
+ * Editing the line re-spreads its per-word timings across the clip's window, so
+ * the playback highlight stays exactly in step with the new text. Retiming does
+ * the same, which is why a trimmed clip never drifts out of sync.
+ *
+ * The interactions listed here are the SAME objects as the emoji chips on the
+ * timeline — this panel shows the reactions triggered by this line, whoever
+ * performs them. Adding one from here creates the chip on that avatar's lane and
+ * draws the connector back to this clip; removing one deletes the chip.
  */
-export function ScriptPanel({ chip, onClose }: { chip: ScriptChip; onClose: () => void }) {
-  const [interactionsExpanded, setInteractionsExpanded] = useState(true);
-
-  // Short chips carry a `label`; full lines are stored per word so the timeline
-  // can highlight them individually during playback.
-  const line = chip.label ?? chip.words?.join(' ') ?? '';
-
+export function ScriptPanel({
+  clip,
+  speaker,
+  triggered,
+  rows,
+  onClose,
+  onEdit,
+  onRetime,
+  onAddInteraction,
+  onRemoveInteraction,
+  onSelectInteraction,
+}: {
+  clip: ScriptClip;
+  speaker: string;
+  /** Reactions whose trigger is this clip, with the row that performs each. */
+  triggered: { row: AvatarRow; it: Interaction }[];
+  rows: AvatarRow[];
+  onClose: () => void;
+  onEdit: (text: string) => void;
+  onRetime: (edge: 'start' | 'end', seconds: number) => void;
+  onAddInteraction: (rowId: string) => void;
+  onRemoveInteraction: (id: string) => void;
+  onSelectInteraction: (id: string) => void;
+}) {
   return (
     <aside className="prop-panel" aria-label="Script">
       <header className="prop-panel__header">
@@ -25,75 +49,88 @@ export function ScriptPanel({ chip, onClose }: { chip: ScriptChip; onClose: () =
         </IconButton>
       </header>
 
-      {/* The spoken line, with an explicit edit affordance */}
-      <div className="prop-panel__section">
-        <div className="prop-panel__textfield">
-          <span className="prop-panel__textfield-text">{line}</span>
-          <IconButton size={32} variant="ghost" aria-label="Edit script">
-            <PencilSimple size={18} />
-          </IconButton>
-        </div>
+      <div className="prop-panel__row">
+        <ChatText size={20} className="prop-panel__row-icon" />
+        <span className="prop-panel__row-title">{speaker}</span>
+        <span className="prop-panel__chip">
+          {formatClock(clip.start)}–{formatClock(clip.end)}
+        </span>
       </div>
 
-      {/* Start / End timestamps. Keyed by clip so switching selection resets the
-          inputs to the newly selected clip's times. */}
+      {/* The line itself. Commits on blur or ⌘/Ctrl+Enter. */}
+      <div className="prop-panel__section">
+        <span className="prop-panel__label">Line</span>
+        <TextField value={clipText(clip)} ariaLabel="Spoken line" onCommit={onEdit} />
+        <p className="prop-panel__note">
+          {clip.words
+            ? `${clip.words.length} words, timed across the clip — editing re-syncs them.`
+            : 'A marker clip — no per-word timing.'}
+        </p>
+      </div>
+
       <div className="prop-panel__section">
         <div className="prop-panel__fields">
-          <label className="prop-panel__field">
-            <span className="prop-panel__label">Start</span>
-            <input
-              className="prop-panel__input"
-              type="text"
-              defaultValue={chip.start}
-              key={`${chip.id}-start`}
-            />
-          </label>
-          <label className="prop-panel__field">
-            <span className="prop-panel__label">End</span>
-            <input
-              className="prop-panel__input"
-              type="text"
-              defaultValue={chip.end}
-              key={`${chip.id}-end`}
-            />
-          </label>
+          <TimeField
+            label="From"
+            value={clip.start}
+            max={clip.end - MIN_CLIP_SEC}
+            onCommit={(v) => onRetime('start', v)}
+          />
+          <TimeField
+            label="To"
+            value={clip.end}
+            min={clip.start + MIN_CLIP_SEC}
+            onCommit={(v) => onRetime('end', v)}
+          />
         </div>
       </div>
 
-      {/* Interactions — collapsible group wrapping the add control and the rows,
-          so collapsing it hides them together. */}
-      <div
-        className="prop-panel__collapsible prop-panel__collapsible--divided"
-        data-expanded={interactionsExpanded || undefined}
-      >
-        <button
-          className="prop-panel__row prop-panel__row--button"
-          type="button"
-          aria-expanded={interactionsExpanded}
-          onClick={() => setInteractionsExpanded((v) => !v)}
-        >
-          <Eye size={20} className="prop-panel__row-icon" />
-          <span className="prop-panel__row-title">Interactions</span>
-          <CaretDown size={18} className="prop-panel__row-icon prop-panel__chevron" />
-        </button>
-        {interactionsExpanded && (
-          <div className="prop-panel__collapsible-body">
-            <button className="prop-panel__add" type="button">
-              <Plus size={16} weight="bold" />
-              Add an interaction
-            </button>
+      {/* Reactions triggered by this line — the same chips as on the timeline. */}
+      <div className="prop-panel__section">
+        <span className="prop-panel__label">Reactions to this line</span>
+        <div className="prop-panel__list">
+          {triggered.map(({ row, it }) => (
+            <div className="prop-panel__listrow" key={it.id}>
+              <span className="prop-panel__chip">{formatClock(it.start)}</span>
+              <span className={`prop-panel__chip prop-panel__chip--${row.color}`}>{row.name}</span>
+              <button
+                type="button"
+                className="prop-panel__listrow-label prop-panel__listrow-label--button"
+                onClick={() => onSelectInteraction(it.id)}
+                title="Select this reaction on the timeline"
+              >
+                {it.emoji} {it.label}
+              </button>
+              <IconButton
+                size={24}
+                variant="ghost"
+                aria-label={`Remove ${row.name}'s ${it.label}`}
+                onClick={() => onRemoveInteraction(it.id)}
+              >
+                <Trash size={14} />
+              </IconButton>
+            </div>
+          ))}
+          {!triggered.length && (
+            <p className="prop-panel__note">Nothing reacts to this line yet.</p>
+          )}
+        </div>
 
-            {chip.interactions.map((it) => (
-              <div className="prop-panel__listrow" key={it.id}>
-                <span className="prop-panel__chip">{it.time}</span>
-                <span className={`prop-panel__chip prop-panel__chip--${it.color}`}>
-                  {it.speaker}
-                </span>
-                <span className="prop-panel__listrow-label">{it.action}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Add a reaction attributed to this line, on any avatar's lane. */}
+        <div className="prop-panel__addrow">
+          {rows.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="prop-panel__add prop-panel__add--compact"
+              onClick={() => onAddInteraction(row.id)}
+              title={`Add a reaction from ${row.name} to this line`}
+            >
+              <Plus size={14} weight="bold" />
+              {row.name}
+            </button>
+          ))}
+        </div>
       </div>
     </aside>
   );

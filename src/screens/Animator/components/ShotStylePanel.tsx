@@ -1,160 +1,56 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { Target, PencilSimple, Eye, CaretDown, Plus, Trash, X } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
+import { CornersOut, PencilSimple, Scissors, Trash, X } from '@phosphor-icons/react';
 import { IconButton } from '../../../ui/IconButton';
-import { useNumberScrub } from '../useNumberScrub';
-import {
-  FOCUS_TARGETS,
-  MIN_SHOT_SEC,
-  SHOT_PRESETS,
-  SPEAKERS,
-  formatClock,
-  parseClock,
-} from '../data';
-import type { Focus, Scene, ShotPreset } from '../data';
+import { MIN_SHOT_SEC, SHOT_PRESETS, subjectsIn } from '../data';
+import type { Shot, ShotPreset } from '../data';
+import { TimeField } from './PanelFields';
 
 /**
- * A timestamp field you can either type into or scrub.
+ * The framing instrument's inspector: what this shot is called, how it crops the
+ * take, and the window it covers.
  *
- * The label and the two edge strips are scrub zones (`ew-resize`); the middle
- * of the box stays a plain text input with an I-beam, so manual entry is
- * untouched. While typing, a local draft shadows the value so a half-finished
- * "0:1" isn't parsed and clamped out from under the caret — Enter and blur
- * commit it, Escape throws it away.
- */
-function TimeField({
-  label,
-  value,
-  min,
-  max,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onCommit: (seconds: number) => void;
-}) {
-  const id = useId();
-  const [draft, setDraft] = useState<string | null>(null);
-
-  // `getValue` reads the committed prop, so each scrub starts from where the
-  // last one actually landed after clamping.
-  const scrub = useNumberScrub({ getValue: () => value, onChange: onCommit, min, max });
-
-  const commitDraft = () => {
-    if (draft === null) return;
-    const parsed = parseClock(draft);
-    if (parsed !== null) onCommit(Math.min(max, Math.max(min, parsed)));
-    setDraft(null);
-  };
-
-  return (
-    <div className="prop-panel__field">
-      <label className="prop-panel__label prop-panel__label--scrub" htmlFor={id} {...scrub}>
-        {label}
-      </label>
-      <div className="prop-panel__input-wrap">
-        <span className="prop-panel__scrub" data-edge="left" aria-hidden {...scrub} />
-        <input
-          id={id}
-          className="prop-panel__input"
-          type="text"
-          inputMode="numeric"
-          value={draft ?? formatClock(value)}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              commitDraft();
-              e.currentTarget.blur();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setDraft(null);
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <span className="prop-panel__scrub" data-edge="right" aria-hidden {...scrub} />
-      </div>
-    </div>
-  );
-}
-
-/** One focus cut: whose eyeline, when, how long, and a control to drop it. */
-function FocusRow({
-  focus,
-  onUpdate,
-  onRemove,
-}: {
-  focus: Focus;
-  onUpdate: (next: Partial<Focus>) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="prop-panel__listrow">
-      <select
-        className="prop-panel__select prop-panel__select--chip"
-        value={focus.target}
-        aria-label="Focus target"
-        onChange={(e) => onUpdate({ target: e.target.value })}
-      >
-        {FOCUS_TARGETS.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
-      <span className="prop-panel__chip">{formatClock(focus.time)}</span>
-      <span className="prop-panel__listrow-label">{formatClock(focus.duration)}s</span>
-      <IconButton
-        size={24}
-        variant="ghost"
-        aria-label={`Delete focus on ${focus.target} at ${formatClock(focus.time)}`}
-        onClick={onRemove}
-      >
-        <Trash size={16} />
-      </IconButton>
-    </div>
-  );
-}
-
-/**
- * Floating right-hand inspector for a selected camera-shot clip: the shot's
- * name and framing preset, its start / end times, and the eye-contact cuts
- * that play inside it. Every control writes straight through to the timeline.
+ * Eye contact used to live here. It moved to the Attention panel, because gaze
+ * is not a property of the camera — it is one of several ways to put the viewer's
+ * eye on a subject, and it belongs next to the intent it serves. That also
+ * retired the keyframe diamonds that used to collide with the clip's own label.
+ *
+ * Both time fields roll the seam against the neighbouring shot: the rail is
+ * contiguous, so every frame keeps exactly one shot style and the take's length
+ * never changes.
  */
 export function ShotStylePanel({
-  scene,
+  shot,
+  neighbours,
   onClose,
   onRename,
-  onRetime,
+  onRoll,
   onSetPreset,
-  onSetSpeaker,
-  onAddFocus,
-  onRemoveFocus,
-  onUpdateFocus,
+  onSetSubject,
+  onSplit,
+  onRemove,
+  playhead,
 }: {
-  scene: Scene;
+  shot: Shot;
+  neighbours: { hasPrev: boolean; hasNext: boolean };
   onClose: () => void;
   onRename: (label: string) => void;
-  onRetime: (edge: 'start' | 'end', seconds: number) => void;
+  onRoll: (edge: 'start' | 'end', seconds: number) => void;
   onSetPreset: (preset: ShotPreset) => void;
-  onSetSpeaker: (speaker: string) => void;
-  onAddFocus: () => void;
-  onRemoveFocus: (focusId: string) => void;
-  onUpdateFocus: (focusId: string, next: Partial<Focus>) => void;
+  onSetSubject: (subjectId: string) => void;
+  onSplit: (seconds: number) => void;
+  onRemove: () => void;
+  playhead: number;
 }) {
-  const [eyeExpanded, setEyeExpanded] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
 
   // Selecting a different clip drops any half-finished rename.
-  useEffect(() => setRenaming(false), [scene.id]);
-
+  useEffect(() => setRenaming(false), [shot.id]);
   useEffect(() => {
     if (renaming) renameRef.current?.select();
   }, [renaming]);
+
+  const canSplit = playhead > shot.start + MIN_SHOT_SEC && playhead < shot.end - MIN_SHOT_SEC;
 
   return (
     <aside className="prop-panel" aria-label="Shot Style">
@@ -165,16 +61,16 @@ export function ShotStylePanel({
         </IconButton>
       </header>
 
-      {/* Shot identity — the name is edited in place, and the change shows on
-          the timeline clip's tag as soon as it commits. */}
+      {/* Identity — the name is edited in place and shows on the clip's tag as
+          soon as it commits. */}
       <div className="prop-panel__row">
-        <Target size={20} className="prop-panel__row-icon" />
+        <CornersOut size={20} className="prop-panel__row-icon" />
         {renaming ? (
           <input
             ref={renameRef}
             className="prop-panel__input prop-panel__input--inline"
             type="text"
-            defaultValue={scene.label}
+            defaultValue={shot.label}
             aria-label="Shot name"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -183,14 +79,17 @@ export function ShotStylePanel({
                 setRenaming(false);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
-                setRenaming(false); // blur handler sees `renaming` already false
+                setRenaming(false);
               }
             }}
-            onBlur={() => setRenaming(false)}
+            onBlur={(e) => {
+              onRename(e.currentTarget.value);
+              setRenaming(false);
+            }}
           />
         ) : (
           <>
-            <span className="prop-panel__row-title">{scene.label}</span>
+            <span className="prop-panel__row-title">{shot.label}</span>
             <IconButton
               size={32}
               variant="ghost"
@@ -203,94 +102,77 @@ export function ShotStylePanel({
         )}
       </div>
 
-      {/* Framing preset — reframes the preview and re-tags the clip. */}
+      {/* Framing + subject. Changing either re-tags the clip, which is what
+          surfaces the change on the rail. */}
       <div className="prop-panel__section">
-        <div className="prop-panel__field">
-          <span className="prop-panel__label">Framing</span>
-          <select
-            className="prop-panel__select"
-            value={scene.preset}
-            aria-label="Shot preset"
-            onChange={(e) => onSetPreset(e.target.value as ShotPreset)}
-          >
-            {SHOT_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+        <div className="prop-panel__fields">
+          <div className="prop-panel__field">
+            <span className="prop-panel__label">Framing</span>
+            <select
+              className="prop-panel__select"
+              value={shot.preset}
+              aria-label="Shot preset"
+              onChange={(e) => onSetPreset(e.target.value as ShotPreset)}
+            >
+              {SHOT_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="prop-panel__field">
+            <span className="prop-panel__label">On</span>
+            <select
+              className="prop-panel__select"
+              value={shot.subjectId}
+              aria-label="Shot subject"
+              onChange={(e) => onSetSubject(e.target.value)}
+            >
+              {subjectsIn(shot.start, shot.end).map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
+        <p className="prop-panel__note">
+          A shot style is a virtual reframe of the one raw take — nothing
+          re-renders when you move it, and the crop follows the subject you pick.
+        </p>
       </div>
 
-      {/* Start / End timestamps — always visible, independent of Eye Contact.
-          Each is bounded by the other so the shot can never invert. */}
+      {/* Start / End — each bounded by its neighbour so the rail can't tear. */}
       <div className="prop-panel__section">
         <div className="prop-panel__fields">
           <TimeField
-            label="Start"
-            value={scene.start}
-            min={0}
-            max={scene.end - MIN_SHOT_SEC}
-            onCommit={(v) => onRetime('start', v)}
+            label="From"
+            value={shot.start}
+            max={shot.end - MIN_SHOT_SEC}
+            disabled={!neighbours.hasPrev}
+            onCommit={(v) => onRoll('start', v)}
           />
           <TimeField
-            label="End"
-            value={scene.end}
-            min={scene.start + MIN_SHOT_SEC}
-            max={Infinity}
-            onCommit={(v) => onRetime('end', v)}
+            label="To"
+            value={shot.end}
+            min={shot.start + MIN_SHOT_SEC}
+            disabled={!neighbours.hasNext}
+            onCommit={(v) => onRoll('end', v)}
           />
         </div>
       </div>
 
-      {/* Eye Contact — collapsible group holding the speaker selector, the focus
-          cuts and the add control, so collapsing hides those together. */}
-      <div className="prop-panel__collapsible" data-expanded={eyeExpanded || undefined}>
+      <div className="prop-panel__section prop-panel__section--actions">
         <button
-          className="prop-panel__row prop-panel__row--button"
+          className="prop-panel__add"
           type="button"
-          aria-expanded={eyeExpanded}
-          onClick={() => setEyeExpanded((v) => !v)}
+          disabled={!canSplit}
+          onClick={() => onSplit(playhead)}
+          title={canSplit ? 'Split at the playhead' : 'Move the playhead inside this shot to split it'}
         >
-          <Eye size={20} className="prop-panel__row-icon" />
-          <span className="prop-panel__row-title">Eye Contact</span>
-          <CaretDown size={18} className="prop-panel__row-icon prop-panel__chevron" />
+          <Scissors size={16} />
+          Split at playhead
         </button>
-        {eyeExpanded && (
-          <div className="prop-panel__collapsible-body">
-            {/* Who holds the camera for this shot */}
-            <div className="prop-panel__listrow">
-              <select
-                className="prop-panel__select prop-panel__select--chip"
-                value={scene.speaker}
-                aria-label="Speaker holding eye contact"
-                onChange={(e) => onSetSpeaker(e.target.value)}
-              >
-                {SPEAKERS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <span className="prop-panel__arrow">→</span>
-              <span className="prop-panel__chip">camera</span>
-            </div>
-
-            <button className="prop-panel__add" type="button" onClick={onAddFocus}>
-              <Plus size={16} weight="bold" />
-              Add a focus
-            </button>
-
-            {scene.focuses.map((f) => (
-              <FocusRow
-                key={f.id}
-                focus={f}
-                onUpdate={(next) => onUpdateFocus(f.id, next)}
-                onRemove={() => onRemoveFocus(f.id)}
-              />
-            ))}
-          </div>
-        )}
+        <IconButton size={32} variant="ghost" aria-label="Delete this shot" onClick={onRemove}>
+          <Trash size={16} />
+        </IconButton>
       </div>
     </aside>
   );

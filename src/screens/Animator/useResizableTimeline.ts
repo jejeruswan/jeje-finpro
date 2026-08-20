@@ -25,10 +25,10 @@ export type TimelineResizerProps = ComponentPropsWithoutRef<'div'> & { isResizin
  * `resizerProps` onto <TimelineResizer /> and apply `timelineHeight` to the
  * timeline container.
  */
-export function useResizableTimeline() {
+export function useResizableTimeline(natural = TIMELINE_DEFAULT_HEIGHT) {
   const containerRef = useRef<HTMLElement | null>(null);
-  const [height, setHeight] = useState(TIMELINE_DEFAULT_HEIGHT);
-  const [maxHeight, setMaxHeight] = useState(TIMELINE_DEFAULT_HEIGHT);
+  const [height, setHeight] = useState(natural);
+  const [maxHeight, setMaxHeight] = useState(natural);
   const [isResizing, setIsResizing] = useState(false);
   // The drag lives in a ref, not in `isResizing`: a fast drag can fire
   // pointermove in the same tick as pointerdown, before React has committed the
@@ -42,9 +42,11 @@ export function useResizableTimeline() {
     if (!el) return;
 
     const measure = () => {
+      // The ceiling is the CONTENT height (the timeline hugs its tracks —
+      // growing past them would only add dead space), and the canvas floor.
       const max = Math.max(
         TIMELINE_MIN_HEIGHT,
-        el.clientHeight - CANVAS_MIN_HEIGHT - RESIZER_HEIGHT,
+        Math.min(natural, el.clientHeight - CANVAS_MIN_HEIGHT - RESIZER_HEIGHT),
       );
       setMaxHeight(max);
       setHeight((h) => Math.min(h, max));
@@ -54,7 +56,7 @@ export function useResizableTimeline() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [natural]);
 
   // Keep the row-resize cursor while dragging even when the pointer strays off
   // the handle (pointer capture keeps the events coming, not the cursor).
@@ -125,7 +127,7 @@ export function useResizableTimeline() {
     onPointerUp: endDrag,
     onPointerCancel: endDrag,
     onKeyDown,
-    onDoubleClick: () => setHeight(clamp(TIMELINE_DEFAULT_HEIGHT)),
+    onDoubleClick: () => setHeight(clamp(natural)),
   };
 
   return { containerRef, timelineHeight: height, isResizing, resizerProps };

@@ -1,0 +1,814 @@
+/* ============================================================================
+   Frame Canvas — the time-anchored timeline, the amber attention line, the
+   curved on-video scrubber and the stage overlays. Matched to the design frame
+   (jess-mirage · 659:122771).
+
+   Kept in its own file: the class names here are deliberately new so none of
+   the pixel-era rules in animator.css fight the geometry that is derived from
+   seconds.
+   ============================================================================ */
+.anim {
+  --anim-ruler-row: 24px;
+  /* The attention band, sampled from the design. */
+  --attn-band: #4e401e;
+  --attn-line: #ffdd33;
+  --attn-none: #6f6a58;
+}
+
+/* --- Canvas + stage ---------------------------------------------------------- */
+
+/* The utilities that replaced the tool pillar. */
+.anim-utils {
+  position: absolute;
+  top: var(--space-16);
+  left: var(--space-16);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* The design fixes the stage at ~631px wide; it only shrinks when space runs
+   out. Overrides the pixel-era 764px in animator.css. */
+.anim-canvas .anim-preview {
+  width: 631px;
+  aspect-ratio: 16 / 9;
+}
+
+.anim-preview__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+/* Play control, inside the frame per the design: solid surface circle with the
+   glyph truly centred, a drop shadow lifting it off the picture — and hidden
+   until the stage is hovered, like the scrubber. */
+.anim-preview .anim-play {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-gray-100);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.anim-preview:hover .anim-play,
+.anim-preview:focus-within .anim-play { opacity: 1; }
+.anim-preview .anim-play:hover { background: var(--color-surface-hover); }
+
+/* --- The curved whole-take scrubber ----------------------------------------- */
+
+.anim-wave {
+  position: absolute;
+  left: 72px; /* clear of the play control */
+  right: 20px;
+  bottom: 16px;
+  height: 48px;
+  z-index: 3;
+  cursor: ew-resize;
+  touch-action: none;
+  /* Hidden until the stage is hovered, like the play control. */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.anim-preview:hover .anim-wave,
+.anim-preview:focus-within .anim-wave,
+.anim-wave[data-scrubbing] { opacity: 1; }
+.anim-wave:focus-visible { outline: 1px solid var(--color-primary); outline-offset: 2px; }
+.anim-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* One uniform line, per the design, shadowed off the picture. */
+.anim-wave__path {
+  fill: none;
+  stroke: var(--color-primary-hover);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+/* Solid primary-cyan dot at the playhead, per the design. */
+.anim-wave__marker {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+/* --- HUD: the object graph on the stage --------------------------------------
+   The HUD only exists while the attention track is selected — the stage is a
+   targeting surface then, so every box shows outright, no hover required. */
+.anim-hud[data-live] .anim-hud__box { opacity: 1; }
+
+/* The current attention target stays lit; everything else reveals on hover. */
+.anim-hud__box[data-target] {
+  opacity: 1;
+  border-color: var(--color-primary);
+  background: rgba(0, 208, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(0, 208, 255, 0.35), 0 0 24px rgba(0, 208, 255, 0.18);
+}
+.anim-hud__box[data-target] .anim-hud__tag {
+  background: var(--color-primary);
+  border-color: transparent;
+  color: var(--color-text-on-primary);
+}
+.anim-hud__box[data-selected]:not([data-target]) {
+  opacity: 1;
+  border-color: var(--color-white);
+}
+/* A detected box can be wrong, so it is drawn as provisional. */
+.anim-hud__box[data-provenance='detected'] { border-style: dashed; }
+
+/* --- Area drawing on the stage --------------------------------------------- */
+
+/* The frosted-glass pass: everything outside the region blurs and dims; the
+   region itself stays crisp — it is the thing being pointed at. The mask's
+   radial gradient gives the soft edge for free. */
+.anim-frost {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  backdrop-filter: blur(9px) saturate(0.85);
+  background: rgba(12, 13, 13, 0.32);
+}
+
+/* Status outline for the region currently holding the eye: a soft dashed
+   ellipse — deliberately unlike the objects' hard rectangles. */
+.anim-area-outline {
+  position: absolute;
+  z-index: 2;
+  border: 1.5px dashed rgba(128, 231, 255, 0.75);
+  border-radius: 50%;
+  box-shadow: 0 0 24px rgba(0, 208, 255, 0.14) inset;
+  pointer-events: none;
+}
+
+/* The draw surface, present only while armed. */
+.anim-drawlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+.anim-drawhint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--space-6) var(--space-12);
+  border-radius: var(--radius-pill);
+  background: rgba(20, 21, 21, 0.82);
+  border: 0.5px solid var(--color-hairline);
+  color: var(--color-text-primary);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-body);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* While drawing, the object boxes go quiet — a drag that starts over the
+   bottle must draw an area, not retarget to the bottle. */
+.anim-hud[data-inert] { pointer-events: none; }
+.anim-hud[data-inert] .anim-hud__box { opacity: 0 !important; }
+
+/* --- Timeline shell ----------------------------------------------------------- */
+
+.anim-timeline__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* While the stage's draw mode is armed, the timeline bows out entirely so the
+   canvas has the room — height animates to 0 (set inline) and the paddings
+   and strokes go with it. */
+.anim .anim-timeline {
+  transition: height 0.28s cubic-bezier(0.4, 0, 0.2, 1), padding 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease;
+}
+.anim .anim-timeline[data-hidden] {
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.anim-timeline__body > .anim-playhead {
+  top: var(--anim-ruler-row);
+  bottom: 0;
+  width: 1.5px;
+}
+
+/* No frame around the timeline itself, but hairlines separate the rows —
+   running the full width, rail icons included. */
+.anim .anim-timeline { border-top: none; border-bottom: none; }
+.anim .anim-layer { border-bottom: 0.5px solid var(--anim-stroke-track); }
+.anim .anim-rail { background: var(--color-bg-primary); }
+.anim-rail__icon { color: var(--color-text-tertiary); }
+/* The whole-track toggle in the rail: quiet at rest, amber when live. */
+.anim-rail__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.anim-rail__toggle:hover { color: var(--color-text-primary); background: rgba(255, 255, 255, 0.06); }
+.anim-rail__toggle[data-on] { color: var(--attn-line); background: rgba(255, 221, 51, 0.12); }
+
+/* --- Ruler ---------------------------------------------------------------- */
+
+.anim-ruler-row {
+  position: relative; /* hosts the time pill, outside the clipped strip */
+  flex: 0 0 auto;
+  height: var(--anim-ruler-row);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+/* Tick labels sit at the strip's vertical centre; segments are absolute so the
+   windowed rendering can place only the visible ones. */
+.anim-ruler-row .anim-ruler__ticks { position: relative; height: 100%; padding: 0; display: block; }
+.anim-ruler-row .anim-ruler__seg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.anim-ruler-row .anim-ruler__dots { top: 50%; transform: translateY(-50%); }
+.anim-ruler-row > .anim-ruler {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+  /* The tick strip is ruled top and bottom. */
+  border-top: 0.5px solid var(--anim-stroke-track);
+  border-bottom: 0.5px solid var(--anim-stroke-track);
+}
+.anim-ruler:focus-visible { outline: 1px solid var(--color-primary); outline-offset: -1px; }
+.anim-ruler-row .anim-ruler__ticks { will-change: transform; }
+/* Inside the pill, the take's total duration steps back so the current time
+   carries the emphasis. */
+.anim-ruler__total { color: rgba(29, 31, 32, 0.45); font-weight: 400; }
+
+/* The pill: centred on the playhead, clamped in JS, positioned in the row so
+   no overflow clip can shave it — and as tall as the tick strip itself. */
+.anim-ruler-row > .anim-ruler__time {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  z-index: 8;
+  /* Fully rounded: the pill is as tall as the strip, so half-height = pill. */
+  border-radius: var(--radius-pill);
+}
+
+/* Floats above the tick strip; the gap to the ticks matches its own 16px
+   left-edge inset, so the cluster sits in an even corner of whitespace. */
+.anim-tlzoom {
+  position: absolute;
+  left: var(--space-16);
+  bottom: calc(100% + var(--space-16));
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px var(--space-4);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* The track stack scrolls sideways only; its height hugs the content, so there
+   is nothing below to scroll to. */
+.anim .anim-tracks { overflow-y: hidden; }
+
+/* Outside the take (lead-in and runout): a faint hatch over slightly deeper
+   dark, so the blank halves read as deliberate "no media" rather than a bug. */
+.anim-offtake {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 9px),
+    rgba(0, 0, 0, 0.28);
+}
+
+/* --- Lanes ---------------------------------------------------------------- */
+
+.anim-layer__lanes {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+}
+.anim-lane-abs { position: absolute; inset: 0; }
+
+/* --- The attention lane -----------------------------------------------------
+   A full-width amber band with one continuous line through its centre. Marks
+   sit ON the line: ● object · ✼ area · ○ none. Runs between marks are derived;
+   a run after a ○ greys out. */
+
+.anim-attn { position: relative; }
+.anim-attn__band {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 32px;
+  background: var(--attn-band);
+  /* Rounded like every other clip on the timeline. */
+  border-radius: var(--radius-md);
+  transition: box-shadow 0.15s ease;
+}
+/* Whole-track selected: the same treatment as every other selected clip — a
+   white frame revealing 2px above and below the body, with full-height caps. */
+.anim-attn__band[data-on] { box-shadow: 0 0 0 2px var(--color-white); }
+
+/* The selected-track end caps: the same white grips every selected clip wears.
+   They span the frame's full height (band + the 2px reveals), exactly like the
+   other tracks' handles. Inert — the take's bounds are the footage's. */
+.anim-attn__cap {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 14px;
+  background: var(--color-white);
+  pointer-events: none;
+  z-index: 1;
+}
+.anim-attn__cap::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: #141515;
+}
+.anim-attn__cap--start { left: 0; border-radius: var(--radius-md) 0 0 var(--radius-md); }
+.anim-attn__cap--end { right: 0; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+/* A run is a stretch of the centre line. */
+.anim-attn__run {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px; /* generous hit area around the 1.5px line */
+  padding: 0;
+  border: none;
+  background:
+    linear-gradient(var(--attn-line), var(--attn-line)) center / 100% 1.5px no-repeat;
+  cursor: pointer;
+}
+.anim-attn__run[data-kind='none'] {
+  background-image: linear-gradient(var(--attn-none), var(--attn-none));
+}
+.anim-attn__run:hover {
+  background-size: 100% 2.5px;
+}
+.anim-attn__run[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+  background-size: 100% 2px;
+}
+
+/* The glyphs. One per mark, centred on the line at the mark's time. */
+.anim-attn__glyph {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--attn-line);
+  font-size: 15px;
+  line-height: 1;
+  z-index: 2;
+}
+/* ● object — a filled dot. */
+.anim-attn__glyph[data-kind='object']::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--attn-line);
+}
+/* ○ none — the same dot with its middle taken out. */
+.anim-attn__glyph[data-kind='none']::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--attn-line);
+  background: var(--attn-band);
+}
+.anim-attn__glyph:hover { transform: translate(-50%, -50%) scale(1.35); }
+.anim-attn__glyph[data-selected] { color: var(--color-white); }
+.anim-attn__glyph[data-selected][data-kind='object']::before { background: var(--color-white); }
+.anim-attn__glyph[data-selected][data-kind='none']::before { border-color: var(--color-white); }
+
+/* --- Clips: one shape, three flavours -------------------------------------- */
+
+.anim-clip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--anim-clip-h);
+  min-width: 8px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: var(--anim-clip-tint, rgba(255, 255, 255, 0.08));
+  color: #fff;
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease, background 0.12s ease;
+}
+.anim-clip:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.anim-clip__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-10);
+  overflow: hidden;
+}
+.anim-clip__label { overflow: hidden; text-overflow: ellipsis; }
+
+/* Selected: a white frame with the clip's own fill inset inside it. */
+.anim-clip[data-selected] {
+  background: var(--color-white);
+  border-color: transparent;
+  overflow: visible;
+  z-index: 3;
+}
+.anim-clip[data-selected] > .anim-clip__body {
+  height: 32px;
+  margin: 0 1px;
+  border-radius: 6px;
+  background-color: var(--anim-clip-selected-base);
+  background-image: linear-gradient(var(--anim-clip-tint), var(--anim-clip-tint));
+  border: 0.5px solid var(--color-hairline);
+}
+.anim-clip--shot[data-selected] { border-radius: var(--radius-md); }
+.anim-clip--shot[data-selected] > .anim-clip__body { flex: 1 1 auto; min-width: 0; }
+.anim-clip--script[data-selected],
+.anim-clip--emoji[data-selected] { border-radius: 0; overflow: visible; }
+/* The emoji body is content-sized and centred, so on its own the selection
+   frame's white would flood the rest of the clip and read as oversized
+   handles. Fill the frame like every other track's body does. */
+.anim-clip--emoji[data-selected] > .anim-clip__body { flex: 1 1 auto; }
+
+/* Shot clips: teal, words only — the reticle icon is retired. */
+.anim-clip--shot { --anim-clip-tint: var(--color-caption-blue); }
+
+.anim-clip--script { font-weight: 500; }
+.anim-clip--emoji { justify-content: center; }
+.anim-clip__body--emoji { justify-content: center; font-size: 15px; line-height: 1; padding: 0 var(--space-6); }
+
+/* Per-avatar tints, published by the row so clip and inset body agree. */
+.anim-avatar-row[data-color='purple'] { --anim-clip-tint: var(--color-caption-purple); }
+.anim-avatar-row[data-color='pink'] { --anim-clip-tint: var(--color-caption-pink); }
+.anim-avatar-row[data-color='green'] { --anim-clip-tint: var(--color-caption-green); }
+
+/* Each word is its own connected inline badge; the one the playhead line is
+   touching lights up (geometric — never the word after). */
+.anim-clip__body--words {
+  padding: 0 var(--space-8);
+  /* The body is the mask; the inner row is what slides. Even when the clip
+     itself has overflow visible (selected, for the outside handles), the words
+     stay contained here. */
+  overflow: hidden;
+}
+.anim-words {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  flex: 0 0 auto;
+  /* Updates continuously with the clock — no transition, or it would
+     rubber-band behind the playhead. */
+  will-change: transform;
+}
+.anim-word {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background 80ms linear, color 80ms linear;
+}
+.anim-word[data-active] { background: rgba(255, 255, 255, 0.92); color: var(--color-gray-900); }
+
+/* --- Edges: seams (contiguous strips) vs trim handles ----------------------- */
+
+.anim-seam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  z-index: 4;
+  cursor: ew-resize;
+  touch-action: none;
+  background: transparent;
+}
+.anim-seam--start { left: -4px; }
+.anim-seam--end { right: -4px; }
+.anim-seam::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.anim-seam:hover::after { background: var(--color-white); }
+
+.anim-handle {
+  /* One number tunes every handle; narrower on the reaction lane where the
+     chip itself is barely wider than a pair of caps. */
+  --anim-handle-w: 16px;
+  position: relative;
+  flex: 0 0 var(--anim-handle-w);
+  width: var(--anim-handle-w);
+  align-self: center;
+  height: var(--anim-clip-h);
+  z-index: 4;
+  background: var(--color-white);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.anim-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: #141515;
+}
+.anim-handle[data-locked] { cursor: default; opacity: 0.45; }
+.anim-handle--in.anim-handle--start { border-radius: var(--radius-md) 0 0 var(--radius-md); }
+.anim-handle--in.anim-handle--end { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.anim-handle--out {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  flex: none;
+}
+.anim-handle--out.anim-handle--start {
+  left: calc(-1 * var(--anim-handle-w));
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.anim-handle--out.anim-handle--end {
+  right: calc(-1 * var(--anim-handle-w));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.anim-clip--emoji .anim-handle { --anim-handle-w: 9px; }
+.anim-clip--emoji .anim-handle::before { height: 10px; }
+
+/* --- Derived connector lines --------------------------------------------- */
+
+.anim-links {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail);
+  right: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.anim-link {
+  position: absolute;
+  width: 11px;
+  padding: 0;
+  border: none;
+  transform: translateX(-50%);
+  background-color: transparent;
+  background-image: linear-gradient(var(--anim-node-line), var(--anim-node-line));
+  background-size: 1px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.anim-link[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+}
+.anim-link::before,
+.anim-link::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--anim-node-dot);
+}
+.anim-link[data-selected]::before,
+.anim-link[data-selected]::after { background: var(--color-white); }
+.anim-link::before { top: -2.5px; }
+.anim-link::after { bottom: -2.5px; }
+
+/* --- Inspector additions ------------------------------------------------- */
+
+.prop-panel--attn { border-color: rgba(255, 221, 51, 0.24); }
+.prop-panel__title { display: inline-flex; align-items: center; gap: var(--space-6); }
+
+.prop-panel__note {
+  margin: var(--space-6) 0 0;
+  font-size: var(--fs-11);
+  line-height: 15px;
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-tertiary);
+}
+.prop-panel__section > .prop-panel__label { display: block; margin-bottom: var(--space-8); }
+
+/* Object rows: the second step of picking a target. Hovering lights the box
+   on the canvas; clicking a box on the canvas picks it here — one choice, two
+   surfaces. */
+.prop-panel__objects { display: flex; flex-direction: column; gap: var(--space-6); }
+.prop-panel__object {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-10);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.prop-panel__object:hover { background: rgba(255, 255, 255, 0.12); }
+.prop-panel__object[data-picked] { border-color: var(--color-primary); background: rgba(0, 208, 255, 0.1); }
+.prop-panel__object-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.prop-panel__object-kind {
+  flex: 0 0 auto;
+  padding: 0 var(--space-6);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: var(--fs-11);
+  line-height: 16px;
+  color: var(--color-text-secondary);
+}
+
+.prop-panel__arearow { display: flex; align-items: center; gap: var(--space-6); }
+.prop-panel__arearow .prop-panel__input { flex: 1 1 auto; min-width: 0; }
+.prop-panel__note--live { color: var(--color-primary-hover); }
+
+/* The three-kind toggle: same glyphs as the line. */
+.prop-panel__kinds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-6); }
+.prop-panel__kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-secondary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.prop-panel__kind:hover { background: rgba(255, 255, 255, 0.12); }
+.prop-panel__kind[data-picked] {
+  color: var(--color-text-primary);
+  border-color: var(--attn-line);
+  background: rgba(255, 221, 51, 0.1);
+}
+.prop-panel__kind-glyph { color: var(--attn-line); font-size: 13px; line-height: 1; }
+
+.prop-panel__readout {
+  display: block;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--fs-13);
+  text-align: center;
+}
+
+.prop-panel__textarea {
+  width: 100%;
+  padding: var(--space-8) var(--space-10);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  line-height: 18px;
+  letter-spacing: var(--tracking-body);
+  resize: vertical;
+}
+.prop-panel__textarea:focus { outline: none; border-color: var(--color-primary); }
+
+.prop-panel__emojigrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-6); }
+.prop-panel__emojibtn {
+  height: 34px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.prop-panel__emojibtn:hover { background: rgba(255, 255, 255, 0.14); }
+.prop-panel__emojibtn[data-picked] { border-color: var(--color-primary); background: rgba(0, 208, 255, 0.14); }
+
+.prop-panel__list { display: flex; flex-direction: column; gap: var(--space-6); }
+.prop-panel__listrow-label--button {
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.prop-panel__listrow-label--button:hover { text-decoration: underline; }
+
+.prop-panel__addrow { display: flex; gap: var(--space-6); margin-top: var(--space-8); }
+.prop-panel__add--compact { height: 32px; font-size: var(--fs-12); }
+.prop-panel__add:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.prop-panel__section--actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  border-bottom: none;
+}
+.prop-panel__section--actions .prop-panel__add { flex: 1 1 auto; }
+.prop-panel__section--actions .prop-panel__note { flex: 1 1 auto; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-clip,
+  .anim-word,
+  .anim-attn__glyph { transition: none; }
+}
