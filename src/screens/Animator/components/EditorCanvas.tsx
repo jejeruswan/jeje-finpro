@@ -1,7 +1,15 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChatCircle, GearSix, Pause, Play } from '@phosphor-icons/react';
 import { IconButton } from '../../../ui/IconButton';
-import { SOURCE_VIDEO, framingFor, subjectById, subjectsAt } from '../data';
+import {
+  SOURCE_VIDEO,
+  TAKE_CUTS,
+  clipRegion,
+  framingParams,
+  framingSubject,
+  mapRegion,
+  subjectsAt,
+} from '../data';
 import type { AreaRegion, AttentionMark, Shot } from '../data';
 import type { SceneEditing } from '../useSceneEditing';
 import { CurvedScrubber } from './CurvedScrubber';
@@ -39,6 +47,7 @@ export function EditorCanvas({
   onDrawArea,
   editingArea,
   activeArea,
+  areaLabel,
   videoRef,
   strip,
   children,
@@ -68,11 +77,13 @@ export function EditorCanvas({
   editingArea: AreaRegion | null;
   /** The region holding the eye at the playhead — outlined as status. */
   activeArea: AreaRegion | null;
+  /** Label for whichever region is showing (the mark's name). */
+  areaLabel?: string;
   /** The stage's video element — the clock during playback (see useVideoSync). */
   videoRef: React.RefObject<HTMLVideoElement | null>;
   /** When the Mirage host supplies the scene sequence, the embedded filmstrip
    *  replaces the curved wave as the take's time player. */
-  strip?: { scenes: StripScene[]; onExit?: () => void };
+  strip?: { scenes: StripScene[]; onExit?: (sceneId?: string) => void };
   /** The floating inspector for whatever is selected. */
   children?: React.ReactNode;
 }) {
@@ -80,14 +91,23 @@ export function EditorCanvas({
   // "CU - Maison Perrier" actually frames the bottle. While DRAWING, the crop
   // is suspended: regions are stored in full-frame coordinates, so you draw on
   // the whole frame, not on a crop of it.
-  const transform =
+  //
+  // Only the VIDEO gets the CSS transform. The HUD's geometry is mapped
+  // through the same numbers instead (mapRegion), so a box tracks its subject
+  // through any crop while its stroke, chip and corner handles keep their
+  // true size — a close-up zooms the picture, never the labelling.
+  const framing =
     !drawing && activeShot
-      ? framingFor(activeShot.preset, subjectById(activeShot.subjectId))
-      : undefined;
+      ? framingParams(activeShot.preset, framingSubject(activeShot))
+      : { z: 1, dx: 0, dy: 0 };
+  const transform =
+    framing.z === 1
+      ? undefined
+      : `scale(${framing.z}) translate(${framing.dx}%, ${framing.dy}%)`;
 
-  /* --- Area drawing: drag from the centre outward -------------------------- */
+  /* --- Area drawing: a corner-to-corner marquee, per the design ------------- */
 
-  const drawRef = useRef<{ cx: number; cy: number } | null>(null);
+  const drawRef = useRef<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<AreaRegion | null>(null);
 
   const pctPoint = (e: ReactPointerEvent<HTMLElement>) => {
@@ -102,19 +122,17 @@ export function EditorCanvas({
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
       if (e.button !== 0) return;
       e.currentTarget.setPointerCapture(e.pointerId);
-      const p = pctPoint(e);
-      drawRef.current = { cx: p.x, cy: p.y };
-      setDraft({ cx: p.x, cy: p.y, rx: 0, ry: 0 });
+      drawRef.current = pctPoint(e);
     },
     onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
       const c = drawRef.current;
       if (!c) return;
       const p = pctPoint(e);
       setDraft({
-        cx: c.cx,
-        cy: c.cy,
-        rx: Math.max(2, Math.abs(p.x - c.cx)),
-        ry: Math.max(2, Math.abs(p.y - c.cy)),
+        x: Math.min(c.x, p.x),
+        y: Math.min(c.y, p.y),
+        w: Math.abs(p.x - c.x),
+        h: Math.abs(p.y - c.y),
       });
     },
     onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {
@@ -124,23 +142,24 @@ export function EditorCanvas({
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
-      const done = draft && draft.rx > 3 && draft.ry > 3
-        ? draft
-        : { cx: c.cx, cy: c.cy, rx: 16, ry: 16 }; // plain click → default spot
+      // A plain click drops a default-size region centred on the point.
+      const done =
+        draft && draft.w > 2 && draft.h > 2
+          ? draft
+          : {
+              x: Math.max(0, Math.min(76, c.x - 12)),
+              y: Math.max(0, Math.min(76, c.y - 12)),
+              w: 24,
+              h: 24,
+            };
       setDraft(null);
       onDrawArea(done);
     },
   };
 
-  /** The frosted-glass overlay: everything OUTSIDE the region blurs and dims —
-   *  the region itself stays crisp, because it is the thing being pointed at.
-   *  The soft edge comes from the radial mask, and it is the honest edge:
-   *  attention is a gradient, not a boundary. */
-  const frostRegion = draft ?? (drawing ? null : editingArea);
-  const frostMask = frostRegion
-    ? `radial-gradient(ellipse ${frostRegion.rx}% ${frostRegion.ry}% at ${frostRegion.cx}% ${frostRegion.cy}%, transparent 62%, black 96%)`
-    : undefined;
-  const showFrost = drawing || editingArea !== null;
+  /** While dragging, the background DIMS and the marquee stays clear — the
+   *  clear rectangle is the thing being pointed at. */
+  const showDim = drawing;
   // Only what is actually in frame right now — the take cuts between rooms.
   const present = subjectsAt(time);
   const targetId = activeMark.kind === 'object' ? activeMark.subjectId : undefined;
@@ -173,14 +192,18 @@ export function EditorCanvas({
               Then the stage is a targeting surface and the boxes show outright
               (no hover needed); otherwise the video stays free of labeling. */}
           {showTargets && (
-          <div className="anim-hud" data-live style={{ transform }} data-inert={drawing || undefined}>
+          <div className="anim-hud" data-live data-inert={drawing || undefined}>
             {present.map((s) => {
               const isTarget = s.id === targetId;
+              // Clipped to the frame: a selection never exceeds the picture,
+              // and a subject the crop pushes out of view gets no box at all.
+              const b = clipRegion(mapRegion(framing, s.box));
+              if (!b) return null;
               const style: CSSProperties = {
-                left: `${s.box.x}%`,
-                top: `${s.box.y}%`,
-                width: `${s.box.w}%`,
-                height: `${s.box.h}%`,
+                left: `${b.x}%`,
+                top: `${b.y}%`,
+                width: `${b.w}%`,
+                height: `${b.h}%`,
               };
               return (
                 <button
@@ -191,6 +214,7 @@ export function EditorCanvas({
                   data-target={isTarget || undefined}
                   data-selected={s.id === selectedSubjectId || s.id === peekSubjectId || undefined}
                   data-provenance={s.provenance}
+                  data-tag-in={b.y < 6 || undefined}
                   style={style}
                   aria-label={
                     isTarget ? `${s.label} — currently holds the eye` : `Put the eye on ${s.label}`
@@ -202,50 +226,75 @@ export function EditorCanvas({
                   }}
                 >
                   <span className="anim-hud__tag">{s.label}</span>
+                  {(isTarget || s.id === selectedSubjectId || s.id === peekSubjectId) && (
+                    <>
+                      <i className="anim-corner anim-corner--tl" />
+                      <i className="anim-corner anim-corner--tr" />
+                      <i className="anim-corner anim-corner--bl" />
+                      <i className="anim-corner anim-corner--br" />
+                    </>
+                  )}
                 </button>
               );
             })}
           </div>
           )}
 
-          {/* Frost: while drawing (full frost until a region opens a clear
-              hole) and while a drawn area is selected for editing. */}
-          {showFrost && (
-            <div
-              className="anim-frost"
-              style={{
-                transform,
-                ...(frostMask
-                  ? { maskImage: frostMask, WebkitMaskImage: frostMask }
-                  : {}),
-              }}
-              aria-hidden
-            />
-          )}
+          {/* While drawing: the background dims; the marquee (once a drag is
+              in flight) is a clear cutout with a light stroke. */}
+          {showDim &&
+            (draft ? (
+              <div className="anim-dimlayer" aria-hidden>
+                <span
+                  className="anim-marquee"
+                  style={{
+                    left: `${draft.x}%`,
+                    top: `${draft.y}%`,
+                    width: `${draft.w}%`,
+                    height: `${draft.h}%`,
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="anim-dimlayer anim-dimlayer--full" aria-hidden />
+            ))}
 
-          {/* Status outline: the region currently holding the eye — again only
-              while the attention track is selected. */}
-          {showTargets && !showFrost && activeArea && (
-            <span
-              className="anim-area-outline"
-              style={{
-                left: `${activeArea.cx - activeArea.rx}%`,
-                top: `${activeArea.cy - activeArea.ry}%`,
-                width: `${activeArea.rx * 2}%`,
-                height: `${activeArea.ry * 2}%`,
-                transform,
-              }}
-              aria-hidden
-            />
+          {/* The committed region: outline + auto-named chip; corner handles
+              only while its mark is selected (editingArea), matching how the
+              object boxes behave. Shown only while attention holds the stage. */}
+          {showTargets && !drawing && (editingArea ?? activeArea) && (
+            (() => {
+              const r = clipRegion(mapRegion(framing, editingArea ?? activeArea!));
+              if (!r) return null;
+              return (
+                <span
+                  className="anim-area"
+                  data-editing={editingArea ? true : undefined}
+                  data-tag-in={r.y < 6 || undefined}
+                  style={{
+                    left: `${r.x}%`,
+                    top: `${r.y}%`,
+                    width: `${r.w}%`,
+                    height: `${r.h}%`,
+                  }}
+                  aria-hidden
+                >
+                  <span className="anim-hud__tag">{areaLabel}</span>
+                  {/* A shown region IS selected for attention — it always
+                      wears the corner squares; stroke-only is the hover look,
+                      and areas have no hover state. */}
+                  <i className="anim-corner anim-corner--tl" />
+                  <i className="anim-corner anim-corner--tr" />
+                  <i className="anim-corner anim-corner--bl" />
+                  <i className="anim-corner anim-corner--br" />
+                </span>
+              );
+            })()
           )}
 
           {/* The draw surface — only exists while armed, so it cannot swallow
               clicks any other time. */}
-          {drawing && (
-            <div className="anim-drawlayer" {...drawHandlers}>
-              {!draft && <span className="anim-drawhint">Drag to set the area — Esc to cancel</span>}
-            </div>
-          )}
+          {drawing && <div className="anim-drawlayer" {...drawHandlers} />}
 
           {/* Play control, inside the frame per the design. */}
           <button
@@ -270,6 +319,7 @@ export function EditorCanvas({
               scenes={strip.scenes}
               duration={duration}
               time={time}
+              cuts={TAKE_CUTS}
               onSeek={onSeek}
               onPause={onPause}
               onExit={strip.onExit}

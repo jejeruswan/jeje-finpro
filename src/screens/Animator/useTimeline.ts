@@ -141,8 +141,11 @@ export function useTimeline(duration = SCENE_DURATION) {
     setPxPerSec(next);
   }, [viewport, duration]);
 
-  /** Total scrollable content: lead-in + the take + lead-out. */
-  const contentWidth = lead * 2 + duration * pxPerSec;
+  /** Total scrollable content: rail + lead-in + the take + lead-out. The rail
+   *  is INSIDE the scroller (sticky), so it counts toward clientWidth — leave
+   *  it out and the maximum scroll comes up exactly RAIL short, stopping the
+   *  scrub at duration − RAIL/pxPerSec instead of the take's end. */
+  const contentWidth = RAIL + lead * 2 + duration * pxPerSec;
   /** Playhead's x inside the viewport (rail excluded) — effectively the centre. */
   const playheadOffset = lead + time * pxPerSec - scrollLeft;
 

@@ -18,7 +18,18 @@
 export type RectMap = Map<string, DOMRect>;
 
 export const MORPH_MS = 620;
-const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+/* One camera, one motion language: a gentle take-off into a long settle
+   (Material's "emphasized" curve) — nothing starts at max velocity. */
+export const EASE = 'cubic-bezier(0.2, 0, 0, 1)';
+/* The vertical axis runs a slightly earlier curve than the horizontal one, so
+   every clone traces a soft arc (lift-then-glide) instead of a straight line. */
+const EASE_LEAD = 'cubic-bezier(0.1, 0.24, 0, 1)';
+/* Chorus cascade: each step of distance from the hero waits this much. */
+const STAGGER_MS = 24;
+const STAGGER_MAX_STEPS = 4;
+
+export const staggerFor = (i: number, heroIdx: number) =>
+  Math.min(Math.abs(i - heroIdx), STAGGER_MAX_STEPS) * STAGGER_MS;
 
 function mkClone(overlay: HTMLElement, src: string, r: DOMRect, radius: string): HTMLElement {
   const d = document.createElement('div');
@@ -49,20 +60,25 @@ function fly(
 ): Promise<unknown> {
   const frame = (r: DOMRect, radius: string, opacity: number) => ({
     left: `${r.left}px`,
-    top: `${r.top}px`,
     width: `${r.width}px`,
     height: `${r.height}px`,
     borderRadius: radius,
     opacity,
   });
+  const timing = { duration: opts.duration ?? MORPH_MS, delay: opts.delay ?? 0, fill: 'both' as const };
   const anim = el.animate(
     [
       frame(from, opts.radius?.[0] ?? el.style.borderRadius, opts.fade === 'in' ? 0 : 1),
       frame(to, opts.radius?.[1] ?? el.style.borderRadius, opts.fade === 'out' ? 0 : 1),
     ],
-    { duration: opts.duration ?? MORPH_MS, delay: opts.delay ?? 0, easing: EASE, fill: 'both' },
+    { ...timing, easing: EASE },
   );
-  return anim.finished.catch(() => undefined);
+  // Vertical travel on its own (earlier) curve — the arc lives in the split.
+  const rise = el.animate(
+    [{ top: `${from.top}px` }, { top: `${to.top}px` }],
+    { ...timing, easing: EASE_LEAD },
+  );
+  return Promise.all([anim.finished, rise.finished]).catch(() => undefined);
 }
 
 const below = (anchor: DOMRect, slot: DOMRect) =>
@@ -87,7 +103,8 @@ export async function flightIn(args: {
   document.body.appendChild(overlay);
 
   const flights: Promise<unknown>[] = [];
-  for (const { id, thumb } of args.order) {
+  const heroIdx = args.order.findIndex((s) => s.id === args.selectedId);
+  for (const [i, { id, thumb }] of args.order.entries()) {
     const slot = args.slots.get(id);
     if (!slot) continue;
     const src = args.sources.get(id);
@@ -114,9 +131,13 @@ export async function flightIn(args: {
         }),
       );
     } else if (src) {
+      // The chorus leaves in a cascade rippling outward from the hero — a
+      // beat of intention instead of eight thumbs moving in lockstep.
       const c = mkClone(overlay, thumb, src, args.radii.card);
       c.style.zIndex = '2';
-      flights.push(fly(c, src, slot, { radius: [args.radii.card, args.radii.slot] }));
+      flights.push(
+        fly(c, src, slot, { radius: [args.radii.card, args.radii.slot], delay: staggerFor(i, heroIdx) }),
+      );
     } else {
       // The card was scrolled out of the L1 viewport: settle into the slot
       // from just below it instead of flying across the screen.
@@ -149,16 +170,32 @@ export async function flightOut(args: {
   document.body.appendChild(overlay);
 
   const flights: Promise<unknown>[] = [];
-  for (const { id, thumb } of args.order) {
+  const heroIdx = args.order.findIndex((s) => s.id === args.selectedId);
+  for (const [i, { id, thumb }] of args.order.entries()) {
     const slot = args.slots.get(id);
     const target = args.targets.get(id);
 
     if (id === args.selectedId) {
       // The player frame shrinks back into its card — under the chorus, same
-      // stacking as the way in.
+      // stacking as the way in. The clone is the scene's own thumbnail with
+      // the LIVE video frame stacked on top: it takes off showing exactly what
+      // the player showed, then dissolves to the thumbnail mid-flight — so by
+      // landing its pixels already match the card underneath, and the final
+      // overlay fade swaps identical images (i.e. is invisible).
       if (target) {
-        const hero = mkClone(overlay, args.videoFrame ?? thumb, args.preview, args.radii.preview);
+        const hero = mkClone(overlay, thumb, args.preview, args.radii.preview);
         hero.style.zIndex = '1';
+        if (args.videoFrame) {
+          const live = document.createElement('img');
+          live.src = args.videoFrame;
+          live.draggable = false;
+          live.className = 'mir-flight__live';
+          hero.appendChild(live);
+          live.animate(
+            [{ opacity: 1 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }],
+            { duration: MORPH_MS, easing: 'ease-out', fill: 'forwards' },
+          );
+        }
         flights.push(fly(hero, args.preview, target, { radius: [args.radii.preview, args.radii.card] }));
       }
       // …while the duplicate that filled its slot slides down out of view.
@@ -172,7 +209,9 @@ export async function flightOut(args: {
     } else if (slot && target) {
       const c = mkClone(overlay, thumb, slot, args.radii.slot);
       c.style.zIndex = '2';
-      flights.push(fly(c, slot, target, { radius: [args.radii.slot, args.radii.card] }));
+      flights.push(
+        fly(c, slot, target, { radius: [args.radii.slot, args.radii.card], delay: staggerFor(i, heroIdx) }),
+      );
     } else if (slot) {
       // Its card ends up outside the L1 viewport: drift down and out.
       const end = new DOMRect(slot.left, slot.top + 16, slot.width, slot.height);

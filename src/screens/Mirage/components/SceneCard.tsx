@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Check, Plus, User } from '@phosphor-icons/react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Check, Plus, User, X } from '@phosphor-icons/react';
 import {
   AVATARS,
   castOf,
@@ -14,17 +14,25 @@ import {
 /** Which cast popover is open inside the editing card. */
 type CastMenu = { kind: 'member'; id: string } | { kind: 'add' } | null;
 
+const clampDuration = (n: number) => Math.min(120, Math.max(2, n));
+
+/** "MM:SS" → seconds, or null when it doesn't parse. */
+const parseTimecode = (v: string): number | null => {
+  const m = /^(\d{1,3}):([0-5]?\d)$/.exec(v.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
 /**
  * One corkboard card (Raw 04/05): thumbnail, title + snippet, derived start
  * timecode and cast chips. While the scene's background render is cooking (or
- * RE-cooking after a generative edit) the thumbnail sits under a heavy blur
- * that resolves to sharp — the copy stays readable and the card interactive.
+ * RE-cooking after a generative edit) the thumbnail is hidden until it lands.
  *
- * The pencil (on hover) shifts the card into an in-place edit posture — no
- * flip, no modal: title and summary become inputs, the badge becomes a
- * scrubbable duration, and the cast row becomes editable with full provenance
- * semantics (generated avatars recast/remove; detected people can be named or
- * claimed into avatars). Generative edits mark the scene stale and re-cook.
+ * The edit posture (Figma 718-136736) replaces the whole card face — no
+ * thumbnail, since the render itself is not editable here: an "Edit Scene"
+ * form with the avatars row, duration + start/end times, title and
+ * description. Everything edits a local DRAFT; the cyan check commits it all
+ * at once (re-cooking the render when a generative field changed) and stays
+ * disabled until something actually differs. ✕ or Escape discards.
  */
 export function SceneCard({
   scene,
@@ -33,6 +41,7 @@ export function SceneCard({
   editing = false,
   startSec,
   onOpen,
+  onBeginEdit,
   onEndEdit,
   onEdit,
   registerEl,
@@ -46,37 +55,109 @@ export function SceneCard({
   onOpen: (el: HTMLElement) => void;
   onBeginEdit: () => void;
   onEndEdit: () => void;
-  /** Apply a patch; `recook` marks the render stale (blur-to-clear again). */
+  /** Apply a patch; `recook` marks the render stale. */
   onEdit: (patch: ScenePatch, opts?: { recook?: boolean }) => void;
   registerEl?: (el: HTMLDivElement | null) => void;
 }) {
   const [menu, setMenu] = useState<CastMenu>(null);
-  const [summaryDraft, setSummaryDraft] = useState(scene.summary);
-  const [scrubSec, setScrubSec] = useState<number | null>(null);
-  const scrub = useRef<{ startX: number; base: number } | null>(null);
 
-  // Fresh drafts each time edit mode opens; menus close when it ends. The
-  // summary is deliberately sampled only at open — while typing, the draft is
-  // the source of truth until commit.
-  const summaryRef = useRef(scene.summary);
-  summaryRef.current = scene.summary;
+  /* --- Edit drafts: seeded when the posture opens, committed by the check --- */
+  const [draftTitle, setDraftTitle] = useState(scene.title);
+  const [draftSummary, setDraftSummary] = useState(scene.summary);
+  const [draftDuration, setDraftDuration] = useState(scene.durationSec);
+  const [draftCast, setDraftCast] = useState<CastMember[]>(scene.cast);
+  const [durStr, setDurStr] = useState(String(scene.durationSec));
+  const [endStr, setEndStr] = useState(formatTimecode(startSec + scene.durationSec));
+
+  /* The edit face scrolls as a whole (no inner textarea scroll): the summary
+     box grows with its content, and a shadow above the confirm row says
+     "there's more below the fold". */
+  const editScrollRef = useRef<HTMLDivElement | null>(null);
+  const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+
+  /* A whisper of a flip whenever the card changes posture (view ⇄ edit).
+     Compares against the previous value (not a consumed-once flag, which
+     StrictMode's doubled effects burn on mount) and runs before paint so the
+     new face never shows an unanimated frame. */
+  const [turning, setTurning] = useState(false);
+  const prevEditing = useRef(editing);
+  useLayoutEffect(() => {
+    if (prevEditing.current !== editing) setTurning(true);
+    prevEditing.current = editing;
+  }, [editing]);
+  const turnProps = {
+    onAnimationEnd: (e: React.AnimationEvent) => {
+      if (e.animationName === 'mir-card-turn') setTurning(false);
+    },
+  };
+  const measureOverflow = () => {
+    const el = editScrollRef.current;
+    if (el) setMoreBelow(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+  };
   useEffect(() => {
-    if (editing) setSummaryDraft(summaryRef.current);
-    else setMenu(null);
+    if (!editing) return;
+    const area = areaRef.current;
+    if (area) {
+      area.style.height = 'auto';
+      area.style.height = `${area.scrollHeight}px`;
+    }
+    requestAnimationFrame(measureOverflow);
+  }, [editing, draftSummary]);
+
+  useEffect(() => {
+    if (!editing) {
+      setMenu(null);
+      return;
+    }
+    setDraftTitle(scene.title);
+    setDraftSummary(scene.summary);
+    setDraftDuration(scene.durationSec);
+    setDraftCast(scene.cast);
+    setDurStr(String(scene.durationSec));
+    setEndStr(formatTimecode(startSec + scene.durationSec));
+    // seed only on OPEN — while editing, the drafts are the source of truth
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
-  const commitSummary = () => {
-    const next = summaryDraft.trim();
-    if (next && next !== scene.summary) onEdit({ summary: next }, { recook: true });
+  const castChanged =
+    draftCast.length !== scene.cast.length ||
+    draftCast.some(
+      (m, i) => m.id !== scene.cast[i]?.id || m.name !== scene.cast[i]?.name || m.provenance !== scene.cast[i]?.provenance,
+    );
+  const dirty =
+    draftTitle.trim() !== scene.title ||
+    draftSummary.trim() !== scene.summary ||
+    draftDuration !== scene.durationSec ||
+    castChanged;
+
+  const commit = () => {
+    if (!dirty) return;
+    const patch: ScenePatch = {};
+    if (draftTitle.trim() && draftTitle.trim() !== scene.title) patch.title = draftTitle.trim();
+    if (draftSummary.trim() && draftSummary.trim() !== scene.summary) patch.summary = draftSummary.trim();
+    if (draftDuration !== scene.durationSec) patch.durationSec = draftDuration;
+    if (castChanged) patch.cast = draftCast;
+    // Title alone is cosmetic; summary / duration / cast send the scene back
+    // to the renderer.
+    const recook = 'summary' in patch || 'durationSec' in patch || 'cast' in patch;
+    onEdit(patch, { recook });
+    onEndEdit();
+  };
+
+  const setDuration = (n: number) => {
+    const d = clampDuration(n);
+    setDraftDuration(d);
+    setEndStr(formatTimecode(startSec + d));
   };
 
   const patchCast = (cast: CastMember[]) => {
     setMenu(null);
-    onEdit({ cast }, { recook: true });
+    setDraftCast(cast);
   };
 
   const availableAvatars = (Object.keys(AVATARS) as AvatarId[]).filter(
-    (id) => !scene.cast.some((m) => m.id === id),
+    (id) => !draftCast.some((m) => m.id === id),
   );
 
   const chip = (m: CastMember, interactive: boolean) => (
@@ -105,12 +186,13 @@ export function SceneCard({
   if (!editing) {
     return (
       <div
-        className={`mir-card ${cooking ? 'mir-card--cooking' : ''}`}
+        className={`mir-card ${cooking ? 'mir-card--cooking' : ''} ${turning ? 'mir-card--turn' : ''}`}
         ref={registerEl}
         onClick={(e) => onOpen(e.currentTarget)}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && onOpen(e.currentTarget)}
+        {...turnProps}
       >
         <div className="mir-card__top">
           <div className="mir-card__thumb">
@@ -123,8 +205,6 @@ export function SceneCard({
                 aria-label="Playing"
               />
             )}
-            {/* Edit entry point intentionally absent for now — updated edit
-                designs are coming; the edit posture below stays wired. */}
           </div>
           <h3 className="mir-card__title">{scene.title}</h3>
           <p className="mir-card__summary">{scene.summary}</p>
@@ -132,105 +212,33 @@ export function SceneCard({
 
         <div className="mir-card__bottom">
           <span className="mir-card__badge">{formatTimecode(startSec)}</span>
-          <span className="mir-card__cast">{scene.cast.map((m) => chip(m, false))}</span>
+          <span className="mir-card__cast">
+            {/* The pile's + (718-136729) is a shortcut straight into editing. */}
+            <button
+              type="button"
+              className="mir-cast mir-cast--plus"
+              aria-label="Edit this scene's cast"
+              onClick={(e) => {
+                e.stopPropagation();
+                onBeginEdit();
+              }}
+            >
+              <Plus size={12} weight="bold" />
+            </button>
+            {scene.cast.map((m) => chip(m, false))}
+          </span>
         </div>
       </div>
     );
   }
 
-  /* --- Edit posture ------------------------------------------------------------ */
-  const shownSec = scrubSec ?? scene.durationSec;
-  const member = menu?.kind === 'member' ? scene.cast.find((m) => m.id === menu.id) : null;
+  /* --- Edit posture (Figma 718-136736) ----------------------------------------- */
+  const member = menu?.kind === 'member' ? draftCast.find((m) => m.id === menu.id) : null;
 
-  return (
-    <div
-      className={`mir-card mir-card--editing ${cooking ? 'mir-card--cooking' : ''}`}
-      ref={registerEl}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          commitSummary();
-          onEndEdit();
-        }
-      }}
-    >
-      <div className="mir-card__top">
-        <div className="mir-card__thumb">
-          <img src={scene.thumb} alt="" draggable={false} />
-          {cooking && <span className="mir-card__cooking-dot" aria-label="Rendering" />}
-        </div>
-        <input
-          className="mir-card__title-input"
-          value={scene.title}
-          aria-label="Scene title"
-          onChange={(e) => onEdit({ title: e.target.value })}
-        />
-        <textarea
-          className="mir-card__summary-input"
-          value={summaryDraft}
-          rows={4}
-          aria-label="Scene description"
-          placeholder="Describe the scene — Mirage restages it on save"
-          onChange={(e) => setSummaryDraft(e.target.value)}
-          onBlur={commitSummary}
-        />
-      </div>
-
-      <div className="mir-card__bottom">
-        <span
-          className="mir-card__badge mir-card__badge--scrub"
-          title="Drag to retime the scene"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            scrub.current = { startX: e.clientX, base: scene.durationSec };
-            setScrubSec(scene.durationSec);
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (!scrub.current) return;
-            const delta = Math.round((e.clientX - scrub.current.startX) / 8);
-            setScrubSec(Math.min(120, Math.max(2, scrub.current.base + delta)));
-          }}
-          onPointerUp={() => {
-            if (scrub.current && scrubSec != null && scrubSec !== scene.durationSec) {
-              onEdit({ durationSec: scrubSec }, { recook: true });
-            }
-            scrub.current = null;
-            setScrubSec(null);
-          }}
-        >
-          {shownSec}s
-        </span>
-
-        <span className="mir-card__cast mir-card__cast--edit">
-          {scene.cast.map((m) => chip(m, true))}
-          <button
-            type="button"
-            className="mir-cast mir-cast--add"
-            aria-label="Add an avatar to this scene"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenu((cur) => (cur?.kind === 'add' ? null : { kind: 'add' }));
-            }}
-          >
-            <Plus size={12} weight="bold" />
-          </button>
-          <button
-            type="button"
-            className="mir-cast mir-cast--done"
-            aria-label="Done editing"
-            onClick={(e) => {
-              e.stopPropagation();
-              commitSummary();
-              onEndEdit();
-            }}
-          >
-            <Check size={13} weight="bold" />
-          </button>
-        </span>
-      </div>
-
-      {/* --- Cast popovers ------------------------------------------------------ */}
+  /* Cast popovers (attn-menu style), anchored under the avatars row. They edit
+     the DRAFT; the check commits. */
+  const castMenus = (
+    <>
       {member && (
         <div className="mir-cast-menu" onClick={(e) => e.stopPropagation()}>
           <p className="mir-cast-menu__head">
@@ -246,7 +254,7 @@ export function SceneCard({
                 className="mir-cast-menu__row"
                 onClick={() => {
                   const name = window.prompt('Name this person', member.name) ?? member.name;
-                  patchCast(scene.cast.map((m) => (m.id === member.id ? { ...m, name } : m)));
+                  patchCast(draftCast.map((m) => (m.id === member.id ? { ...m, name } : m)));
                 }}
               >
                 Name this person
@@ -258,7 +266,7 @@ export function SceneCard({
                   // The claim flow: a detected person becomes a real, editable
                   // Captions avatar — the scene is now recastable around them.
                   patchCast(
-                    scene.cast.map((m) =>
+                    draftCast.map((m) =>
                       m.id === member.id ? { ...m, provenance: 'generated' as const } : m,
                     ),
                   )
@@ -273,9 +281,7 @@ export function SceneCard({
                 type="button"
                 className="mir-cast-menu__row"
                 key={id}
-                onClick={() =>
-                  patchCast(scene.cast.map((m) => (m.id === member.id ? castOf(id) : m)))
-                }
+                onClick={() => patchCast(draftCast.map((m) => (m.id === member.id ? castOf(id) : m)))}
               >
                 Recast as {AVATARS[id].name}
               </button>
@@ -284,7 +290,7 @@ export function SceneCard({
           <button
             type="button"
             className="mir-cast-menu__row mir-cast-menu__row--danger"
-            onClick={() => patchCast(scene.cast.filter((m) => m.id !== member.id))}
+            onClick={() => patchCast(draftCast.filter((m) => m.id !== member.id))}
           >
             Remove from scene
           </button>
@@ -302,7 +308,7 @@ export function SceneCard({
               type="button"
               className="mir-cast-menu__row"
               key={id}
-              onClick={() => patchCast([...scene.cast, castOf(id)])}
+              onClick={() => patchCast([...draftCast, castOf(id)])}
             >
               <img className="mir-cast-menu__chip" src={AVATARS[id].chip} alt="" />
               {AVATARS[id].name}
@@ -310,6 +316,151 @@ export function SceneCard({
           ))}
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div
+      className={`mir-card mir-card--editing ${cooking ? 'mir-card--cooking' : ''} ${turning ? 'mir-card--turn' : ''}`}
+      ref={registerEl}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onEndEdit();
+        }
+      }}
+      {...turnProps}
+    >
+      <div className="mir-edit" ref={editScrollRef} onScroll={measureOverflow}>
+        <div className="mir-edit__head">
+          <span className="mir-edit__heading">Edit Scene</span>
+          <button
+            type="button"
+            className="mir-edit__close"
+            aria-label="Discard changes"
+            onClick={onEndEdit}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mir-edit__section">
+          <span className="mir-edit__label">Avatars</span>
+          <div className="mir-edit__castwrap">
+            <div className="mir-edit__cast">
+              <button
+                type="button"
+                className="mir-cast mir-cast--plus"
+                aria-label="Add an avatar to this scene"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenu((cur) => (cur?.kind === 'add' ? null : { kind: 'add' }));
+                }}
+              >
+                <Plus size={14} weight="bold" />
+              </button>
+              {draftCast.map((m) => chip(m, true))}
+            </div>
+            {castMenus}
+          </div>
+        </div>
+
+        <div className="mir-edit__times">
+          <div className="mir-edit__section mir-edit__section--duration">
+            <span className="mir-edit__label" id={`dur-${scene.id}`}>
+              Duration
+            </span>
+            <div className="mir-edit__field mir-edit__field--suffix">
+              <input
+                value={durStr}
+                inputMode="numeric"
+                aria-labelledby={`dur-${scene.id}`}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '').slice(0, 3);
+                  setDurStr(v);
+                  if (v) setDuration(Number(v));
+                }}
+                onBlur={() => setDurStr(String(draftDuration))}
+              />
+              <span className="mir-edit__suffix">s</span>
+            </div>
+          </div>
+          <div className="mir-edit__pair">
+            <div className="mir-edit__section">
+              <span className="mir-edit__label">Start time</span>
+              <input
+                className="mir-edit__field mir-edit__field--start"
+                value={formatTimecode(startSec)}
+                readOnly
+                aria-label="Start time (derived from the scenes before)"
+                tabIndex={-1}
+              />
+            </div>
+            <div className="mir-edit__section">
+              <span className="mir-edit__label">End time</span>
+              <input
+                className="mir-edit__field mir-edit__field--end"
+                value={endStr}
+                aria-label="End time"
+                onChange={(e) => setEndStr(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                onBlur={() => {
+                  const sec = parseTimecode(endStr);
+                  if (sec != null && sec > startSec) {
+                    const d = clampDuration(sec - startSec);
+                    setDraftDuration(d);
+                    setDurStr(String(d));
+                    setEndStr(formatTimecode(startSec + d));
+                  } else {
+                    setEndStr(formatTimecode(startSec + draftDuration));
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mir-edit__section">
+          <span className="mir-edit__label" id={`title-${scene.id}`}>
+            Title
+          </span>
+          <input
+            className="mir-edit__field"
+            value={draftTitle}
+            aria-labelledby={`title-${scene.id}`}
+            onChange={(e) => setDraftTitle(e.target.value)}
+          />
+        </div>
+
+        <div className="mir-edit__section">
+          <span className="mir-edit__label" id={`desc-${scene.id}`}>
+            Description
+          </span>
+          <textarea
+            className="mir-edit__field mir-edit__area"
+            ref={areaRef}
+            rows={2}
+            value={draftSummary}
+            aria-labelledby={`desc-${scene.id}`}
+            placeholder="Describe the scene — Mirage restages it on save"
+            onChange={(e) => setDraftSummary(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* More below the fold: shadow only, never a scrollbar. */}
+      {moreBelow && <div className="mir-edit__more" aria-hidden />}
+
+      {/* Commit: lit cyan only once something actually changed. */}
+      <button
+        type="button"
+        className="mir-edit__confirm"
+        aria-label={dirty ? 'Save changes' : 'No changes to save'}
+        disabled={!dirty}
+        onClick={commit}
+      >
+        <Check size={14} weight="bold" />
+      </button>
     </div>
   );
 }

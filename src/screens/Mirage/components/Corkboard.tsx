@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ListBullets, Plus, X } from '@phosphor-icons/react';
+import { ListBullets, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react';
 import { motion } from 'motion/react';
 import { ViewfinderReticle } from '../../../assets/icons';
 import {
@@ -51,6 +51,7 @@ export function Corkboard({
   onOpenScene,
   onInsertScene,
   onEditScene,
+  onDeleteScene,
   onReorderScene,
   registerCard,
   onHoverCard,
@@ -74,6 +75,8 @@ export function Corkboard({
   onInsertScene: (afterIndex: number, prompt?: string) => void;
   /** Apply an edit to a scene; `recook` marks its render stale. */
   onEditScene: (id: string, patch: ScenePatch, opts?: { recook?: boolean }) => void;
+  /** Remove a scene from the sequence (the trash under a hovered card). */
+  onDeleteScene: (id: string) => void;
   /** Move a scene before `beforeId` (null = after the last visible card). */
   onReorderScene: (id: string, beforeId: string | null) => void;
   registerCard: (id: string, el: HTMLDivElement | null) => void;
@@ -436,11 +439,16 @@ export function Corkboard({
   // A plain vertical wheel anywhere over the board drives the strip
   // horizontally — the corkboard's only scroll axis. Ctrl-wheel stays
   // untouched: that's the pinch-zoom axis, handled at the flow root.
+  const editingIdRef = useRef<string | null>(null);
+  editingIdRef.current = editingId;
   useEffect(() => {
     const board = boardRef.current;
     if (!board) return;
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return;
+      // While a card is in its edit posture, the wheel belongs to IT — the
+      // form face scrolls vertically instead of the strip sliding away.
+      if (editingIdRef.current) return;
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // already horizontal
       e.preventDefault();
       rowRef.current?.scrollBy({ left: e.deltaY });
@@ -693,6 +701,37 @@ export function Corkboard({
                       registerCard(s.id, el);
                     }}
                   />
+                  {/* Hover actions (718-136736): pencil + trash floating just
+                      under the card. Pointer events stop here so a press can
+                      never read as the start of a hold-drag reorder. */}
+                  {editingId !== s.id && (
+                    <div className="mir-card-actions">
+                      <button
+                        type="button"
+                        className="mir-card-actions__btn"
+                        aria-label={`Edit ${s.title}`}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingId(s.id);
+                        }}
+                      >
+                        <PencilSimple size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mir-card-actions__btn mir-card-actions__btn--danger"
+                        aria-label={`Delete ${s.title}`}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteScene(s.id);
+                        }}
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
               {i < visible.length - 1 && (

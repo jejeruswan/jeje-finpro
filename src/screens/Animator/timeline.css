@@ -109,54 +109,62 @@
   pointer-events: none;
 }
 
-/* --- HUD: the object graph on the stage --------------------------------------
-   The HUD only exists while the attention track is selected — the stage is a
-   targeting surface then, so every box shows outright, no hover required. */
-.anim-hud[data-live] .anim-hud__box { opacity: 1; }
-
-/* The current attention target stays lit; everything else reveals on hover. */
-.anim-hud__box[data-target] {
-  opacity: 1;
-  border-color: var(--color-primary);
-  background: rgba(0, 208, 255, 0.1);
-  box-shadow: 0 0 0 1px rgba(0, 208, 255, 0.35), 0 0 24px rgba(0, 208, 255, 0.18);
+/* --- HUD: the object graph on the stage (styles sampled from the design) -----
+   Boxes exist only while the attention track is selected, and even then each
+   one is invisible until hovered — hover shows the #A6ECFF outline and the
+   chip riding the top-left corner. The mark's current target (and a
+   list-hovered peek) stays visible, wearing the white corner handles. */
+.anim-hud__box {
+  opacity: 0;
+  border: 1px solid #a6ecff;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.anim-hud__box[data-target] .anim-hud__tag {
-  background: var(--color-primary);
-  border-color: transparent;
-  color: var(--color-text-on-primary);
-}
-.anim-hud__box[data-selected]:not([data-target]) {
-  opacity: 1;
-  border-color: var(--color-white);
-}
-/* A detected box can be wrong, so it is drawn as provisional. */
-.anim-hud__box[data-provenance='detected'] { border-style: dashed; }
+.anim-hud__box:hover,
+.anim-hud__box[data-target],
+.anim-hud__box[data-selected] { opacity: 1; }
 
-/* --- Area drawing on the stage --------------------------------------------- */
+/* --- Area drawing on the stage (colours sampled from the design) ----------- */
 
-/* The frosted-glass pass: everything outside the region blurs and dims; the
-   region itself stays crisp — it is the thing being pointed at. The mask's
-   radial gradient gives the soft edge for free. */
-.anim-frost {
+/* While dragging, the background dims and the marquee stays clear: the clear
+   rectangle is the thing being pointed at. The cutout is the marquee's own
+   giant shadow, so it is one paint. */
+.anim-dimlayer {
   position: absolute;
   inset: 0;
   z-index: 3;
+  overflow: hidden;
   pointer-events: none;
-  backdrop-filter: blur(9px) saturate(0.85);
-  background: rgba(12, 13, 13, 0.32);
+}
+.anim-dimlayer--full { background: rgba(0, 0, 0, 0.5); }
+.anim-marquee {
+  position: absolute;
+  border: 1px solid rgba(214, 246, 255, 0.95);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
 }
 
-/* Status outline for the region currently holding the eye: a soft dashed
-   ellipse — deliberately unlike the objects' hard rectangles. */
-.anim-area-outline {
+/* The committed region: #A6ECFF outline with the model-named chip; the white
+   corner handles join it while its mark is selected. */
+.anim-area {
   position: absolute;
   z-index: 2;
-  border: 1.5px dashed rgba(128, 231, 255, 0.75);
-  border-radius: 50%;
-  box-shadow: 0 0 24px rgba(0, 208, 255, 0.14) inset;
+  border: 1px solid #a6ecff;
   pointer-events: none;
 }
+
+/* The small square corner handles the design puts on a selected box. */
+.anim-corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: var(--color-white);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+.anim-corner--tl { left: -4px; top: -4px; }
+.anim-corner--tr { right: -4px; top: -4px; }
+.anim-corner--bl { left: -4px; bottom: -4px; }
+.anim-corner--br { right: -4px; bottom: -4px; }
 
 /* The draw surface, present only while armed. */
 .anim-drawlayer {
@@ -166,26 +174,44 @@
   cursor: crosshair;
   touch-action: none;
 }
-.anim-drawhint {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  padding: var(--space-6) var(--space-12);
-  border-radius: var(--radius-pill);
-  background: rgba(20, 21, 21, 0.82);
-  border: 0.5px solid var(--color-hairline);
-  color: var(--color-text-primary);
-  font-size: var(--fs-12);
-  letter-spacing: var(--tracking-body);
-  pointer-events: none;
-  white-space: nowrap;
-}
-
 /* While drawing, the object boxes go quiet — a drag that starts over the
    bottle must draw an area, not retarget to the bottle. */
 .anim-hud[data-inert] { pointer-events: none; }
 .anim-hud[data-inert] .anim-hud__box { opacity: 0 !important; }
+
+/* The label chip, per the design: pale cyan, dark lowercase text, sitting ON
+   the box's top edge, left-aligned with its stroke. Shared by object boxes and
+   drawn areas. */
+.anim-hud__tag,
+.anim-area .anim-hud__tag {
+  position: absolute;
+  bottom: 100%;
+  top: auto;
+  left: -1px;
+  padding: 2px 7px 3px;
+  border: none;
+  border-radius: 4px 4px 4px 0;
+  background: #a6ecff;
+  backdrop-filter: none;
+  color: #10333c;
+  font-family: var(--font-brand);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 15px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+/* A box that starts at (or near) the frame's top has no room above it — the
+   chip would leave the picture. It tucks INSIDE the box instead, hanging off
+   the same top-left corner. */
+.anim-hud__box[data-tag-in] .anim-hud__tag,
+.anim-area[data-tag-in] .anim-hud__tag {
+  bottom: auto;
+  top: -1px;
+  border-radius: 0 0 4px 0;
+}
 
 /* --- Timeline shell ----------------------------------------------------------- */
 
@@ -350,35 +376,35 @@
   border-radius: var(--radius-md);
   transition: box-shadow 0.15s ease;
 }
-/* Whole-track selected: the same treatment as every other selected clip — a
-   white frame revealing 2px above and below the body, with full-height caps. */
-.anim-attn__band[data-on] { box-shadow: 0 0 0 2px var(--color-white); }
-
-/* The selected-track end caps: the same white grips every selected clip wears.
-   They span the frame's full height (band + the 2px reveals), exactly like the
-   other tracks' handles. Inert — the take's bounds are the footage's. */
-.anim-attn__cap {
+/* Whole-track selected: built like every other selected clip. The frame is a
+   SINGLE white element (36px tall — band plus 2px reveals — with the 18px cap
+   zones at its ends), and the amber band sits inset inside it with the same
+   6px body radius selected clips use. One paint, so nothing can disconnect. */
+.anim-attn__frame {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--anim-clip-h);
   background: var(--color-white);
+  border-radius: var(--radius-md);
   pointer-events: none;
-  z-index: 1;
 }
-.anim-attn__cap::before {
+/* The grip lines, centred in each cap zone. */
+.anim-attn__frame::before,
+.anim-attn__frame::after {
   content: '';
   position: absolute;
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateY(-50%);
   width: 2px;
   height: 12px;
   border-radius: 2px;
   background: #141515;
 }
-.anim-attn__cap--start { left: 0; border-radius: var(--radius-md) 0 0 var(--radius-md); }
-.anim-attn__cap--end { right: 0; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.anim-attn__frame::before { left: 8px; }
+.anim-attn__frame::after { right: 8px; }
+/* Inside the frame the band rounds like every selected clip body. */
+.anim-attn__band[data-on] { border-radius: 6px; }
 /* A run is a stretch of the centre line. */
 .anim-attn__run {
   position: absolute;
@@ -666,8 +692,24 @@
 
 /* --- Inspector additions ------------------------------------------------- */
 
-.prop-panel--attn { border-color: rgba(255, 221, 51, 0.24); }
-.prop-panel__title { display: inline-flex; align-items: center; gap: var(--space-6); }
+.prop-panel--attn {
+  /* The subject list floats past the panel's bottom edge (as designed) —
+     this panel is short and never scrolls, so clipping costs nothing. */
+  overflow: visible;
+}
+.prop-panel__title { display: inline-flex; align-items: center; gap: var(--space-8); }
+.prop-panel__header-actions { display: inline-flex; align-items: center; gap: var(--space-8); }
+/* Header icon buttons wear the design's outlined chrome (32px, radius 6). */
+.prop-panel__hbtn {
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+/* Per the design: the time columns sit 6px apart, values left-aligned. */
+.prop-panel--attn .prop-panel__fields { gap: var(--space-6); }
+.prop-panel--attn .prop-panel__input-wrap .prop-panel__input {
+  text-align: left;
+  padding-left: var(--space-12);
+}
 
 .prop-panel__note {
   margin: var(--space-6) 0 0;
@@ -678,18 +720,423 @@
 }
 .prop-panel__section > .prop-panel__label { display: block; margin-bottom: var(--space-8); }
 
-/* Object rows: the second step of picking a target. Hovering lights the box
-   on the canvas; clicking a box on the canvas picks it here — one choice, two
-   surfaces. */
-.prop-panel__objects { display: flex; flex-direction: column; gap: var(--space-6); }
-.prop-panel__object {
+/* --- The Attention panel's kind row ----------------------------------------
+   One row, two postures. UNFOLDED: the three kinds laid out as chips (a fresh
+   mark opens here — choosing is the whole job). COLLAPSED: the picked kind as
+   a dropdown beside that kind's target control. The dropdown IS the collapsed
+   chips: clicking it unfolds them again. Values are from the Figma frames
+   (jess-mirage 710:134144 / 710:134517–135680). */
+
+.attn-row {
   display: flex;
+  align-items: stretch;
+  gap: var(--space-6);
+}
+.attn-row > * { animation: attn-swap 160ms ease; }
+@keyframes attn-swap {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The mark's symbol, drawn in the track's own amber. */
+.attn-glyph { display: inline-flex; color: var(--attn-line); }
+
+/* Unfolded: ONE segmented control asking the question, under a quiet label —
+   a single grouped object reads as a control the way three floating chips
+   never did. Segments cascade in so the row visibly arrives to be answered.
+   A fresh mark shows no selection until the user commits (its inherited kind
+   is an accident of contiguity, not an answer). */
+.attn-seg {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: var(--space-8);
+}
+/* One option = a glyph-only box with its caption below; the whole column is
+   the button. */
+.attn-seg__opt {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--space-8);
-  padding: var(--space-8) var(--space-10);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  animation: attn-swap 200ms ease backwards;
+}
+.attn-seg__opt:nth-child(2) { animation-delay: 30ms; }
+.attn-seg__opt:nth-child(3) { animation-delay: 60ms; }
+.attn-seg__box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
   border: 0.5px solid var(--color-hairline);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.12s ease;
+}
+.attn-seg__opt:hover .attn-seg__box { background: rgba(255, 255, 255, 0.14); }
+.attn-seg__opt[data-picked] .attn-seg__box { background: var(--color-surface-hover); }
+.attn-seg__caption {
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-tertiary);
+  transition: color 0.12s ease;
+}
+.attn-seg__opt:hover .attn-seg__caption,
+.attn-seg__opt[data-picked] .attn-seg__caption { color: var(--color-text-primary); }
+
+/* --- The Camera State panel -------------------------------------------------
+   Two pages in one panel (summary ⇄ edit); the shells and controls reuse the
+   attention panel's tokens. Values from the Figma frames (jess-mirage
+   726:139781). */
+
+.cam-page { display: flex; flex-direction: column; width: 100%; animation: attn-swap 160ms ease; }
+
+/* The summary row: the state's derived name with the pencil that opens it. */
+.cam-namerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-height: 52px;
+}
+.cam-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cam-namerow .icon-btn { color: var(--color-text-secondary); }
+
+/* The edit page's back button carries a filled chrome, per the design. */
+.prop-panel__hbtn--filled { background: var(--color-surface); }
+
+/* Dropdown menus under full-width fields keep the design's 141px width. */
+.attn-menu--fit { right: auto; width: 141px; }
+
+/* Stability: a slider field and its value box, split by a 1.5px seam. */
+.cam-slider-row { display: flex; align-items: stretch; gap: 1.5px; width: 100%; }
+.cam-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 var(--space-16) 0 var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.cam-slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.cam-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--color-white) 0 var(--fill, 50%), #2a2c2d var(--fill, 50%) 100%);
+}
+.cam-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-white);
+}
+.cam-slider input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #2a2c2d;
+}
+.cam-slider input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-white);
+}
+.cam-slider input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-white);
+}
+.cam-slider-value {
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+}
+
+/* --- The Interaction panel ----------------------------------------------------
+   Three pages (summary ⇄ emoji vocabulary ⇄ custom prompt/draw); shells and
+   controls reuse the attention/camera kit. Values from the Figma frames
+   (jess-mirage 728:141532). */
+
+/* This panel keeps the default 14px column gap on its time fields. */
+.prop-panel--ix .prop-panel__fields { gap: 14px; }
+
+.ix-avatar { border-radius: 50%; object-fit: cover; }
+
+/* The parent line, wearing its speaker's track colour. */
+.ix-parent {
+  display: block;
+  width: 100%;
+  min-height: 41px;
+  padding: 11px var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ix-parent[data-color='purple'] { --ix-c: var(--color-caption-purple); }
+.ix-parent[data-color='pink'] { --ix-c: var(--color-caption-pink); }
+.ix-parent[data-color='green'] { --ix-c: var(--color-caption-green); }
+.ix-parent[data-color] {
+  background: color-mix(in srgb, var(--ix-c) 24%, transparent);
+  border-color: color-mix(in srgb, var(--ix-c) 60%, transparent);
+}
+
+.ix-gesture { display: inline-flex; align-items: center; gap: var(--space-8); min-width: 0; }
+
+/* The emoji vocabulary: five columns of bordered tiles. */
+.ix-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-8) 15px;
+}
+.ix-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0;
+  background: none;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: 10px;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.ix-emoji:hover { background: rgba(255, 255, 255, 0.08); }
+.ix-emoji[data-picked] { background: var(--color-surface-hover); }
+
+/* Prompt | Draw tabs. */
+.ix-tabs {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-10) var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+}
+.ix-tab {
+  height: 36px;
+  padding: 0 var(--space-12);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ix-tab:hover { color: var(--color-text-primary); }
+.ix-tab[data-active] { background: var(--color-surface-hover); color: var(--color-text-primary); }
+
+.ix-prompt { min-height: 67px; resize: none; }
+.ix-prompt::placeholder { color: var(--color-text-secondary); }
+
+/* The draw canvas fills the section; strokes keep true width at any size. */
+.ix-canvaswrap { position: relative; }
+.ix-canvas {
+  display: block;
+  width: 100%;
+  height: 531px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  cursor: crosshair;
+  touch-action: none;
+}
+.ix-canvas polyline {
+  fill: none;
+  stroke-width: 2px;
+  /* The viewBox stretches to the canvas; the ink must not. */
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The floating ink toolbar, riding just off the panel's left edge. */
+.ix-tools {
+  position: absolute;
+  left: -62px;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-10);
+  width: 50px;
+  padding: 14px 0;
+  background: var(--color-bg-primary, #151617);
+  border-radius: 25px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.ix-ink {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ix-ink[data-picked] { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 2px; }
+.ix-tools__gap { height: var(--space-8); }
+.ix-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.ix-tool:hover { color: var(--color-text-primary); background: rgba(255, 255, 255, 0.08); }
+.ix-tool[data-active] { color: var(--color-text-primary); }
+
+/* --- The Script panel -----------------------------------------------------------
+   Family style: the line, its window, and a collapsible Interactions group —
+   who reacts (the add row) and what already reacts (the reaction rows). */
+
+.sx-groupheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-10) var(--space-12);
+  background: none;
+  border: none;
+  border-bottom: 0.5px solid var(--color-hairline);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  cursor: pointer;
+}
+.sx-groupheader__chevron {
+  color: var(--color-text-secondary);
+  transition: transform 150ms ease;
+}
+.sx-groupheader__chevron[data-open] { transform: rotate(180deg); }
+
+.sx-reactions { display: flex; flex-direction: column; gap: 14px; }
+
+/* A reaction this line triggers: when · who · what. Clicking opens it. */
+.sx-reaction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--space-8);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  font-family: var(--font-brand);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.sx-reaction:hover { background: rgba(255, 255, 255, 0.14); }
+.sx-reaction__gesture {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: 15px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+.sx-reaction__label {
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Delete: the panel's last row, full width, quiet outline. */
+.attn-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  width: 100%;
+  height: 40px;
+  background: none;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.attn-delete:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* Collapsed: filled fields, the shared input token. */
+.attn-select {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: 40px;
+  padding: var(--space-8) var(--space-10) var(--space-8) var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-family: var(--font-brand);
   font-size: var(--fs-13);
@@ -698,48 +1145,95 @@
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-.prop-panel__object:hover { background: rgba(255, 255, 255, 0.12); }
-.prop-panel__object[data-picked] { border-color: var(--color-primary); background: rgba(0, 208, 255, 0.1); }
-.prop-panel__object-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.prop-panel__object-kind {
-  flex: 0 0 auto;
-  padding: 0 var(--space-6);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  font-size: var(--fs-11);
-  line-height: 16px;
-  color: var(--color-text-secondary);
-}
-
-.prop-panel__arearow { display: flex; align-items: center; gap: var(--space-6); }
-.prop-panel__arearow .prop-panel__input { flex: 1 1 auto; min-width: 0; }
-.prop-panel__note--live { color: var(--color-primary-hover); }
-
-/* The three-kind toggle: same glyphs as the line. */
-.prop-panel__kinds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-6); }
-.prop-panel__kind {
+button.attn-select:hover { background: rgba(255, 255, 255, 0.14); }
+.attn-select__value {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
-  padding: var(--space-8);
+  gap: var(--space-12);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attn-select__value[data-placeholder] { color: var(--color-text-secondary); }
+.attn-select__caret { flex: 0 0 auto; color: var(--color-text-secondary); }
+/* Draw mode is live on the stage — the field just says so. */
+.attn-select--live { color: var(--color-text-secondary); cursor: default; }
+
+/* The area label: an editable field with the redraw pencil tucked inside. */
+.attn-field {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 40px;
+  padding: 0 var(--space-6) 0 0;
+  background: rgba(255, 255, 255, 0.1);
   border: 0.5px solid var(--color-hairline);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-text-secondary);
-  font-family: var(--font-brand);
-  font-size: var(--fs-12);
-  letter-spacing: var(--tracking-body);
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.prop-panel__kind:hover { background: rgba(255, 255, 255, 0.12); }
-.prop-panel__kind[data-picked] {
+.attn-field:focus-within { border-color: var(--color-primary); }
+.attn-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0 0 var(--space-12);
+  background: none;
+  border: none;
   color: var(--color-text-primary);
-  border-color: var(--attn-line);
-  background: rgba(255, 221, 51, 0.1);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
 }
-.prop-panel__kind-glyph { color: var(--attn-line); font-size: 13px; line-height: 1; }
+.attn-field__input:focus { outline: none; }
+
+/* The floating subject list: what is on screen at this mark's moment.
+   Hovering a row lights its box on the canvas; clicking a box on the canvas
+   picks it here — one choice, two surfaces. */
+.attn-select-wrap { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
+.attn-select-wrap > .attn-select { flex: 1 1 auto; }
+.attn-menu {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border-bottom: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  animation: attn-menu-in 140ms ease;
+}
+@keyframes attn-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.attn-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: var(--space-6) var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.attn-menu__item:hover,
+.attn-menu__item[data-picked] { background: var(--color-surface-hover); }
 
 .prop-panel__readout {
   display: block;
@@ -753,6 +1247,7 @@
 }
 
 .prop-panel__textarea {
+  resize: none;
   width: 100%;
   padding: var(--space-8) var(--space-10);
   background: rgba(255, 255, 255, 0.1);
@@ -763,7 +1258,6 @@
   font-size: var(--fs-13);
   line-height: 18px;
   letter-spacing: var(--tracking-body);
-  resize: vertical;
 }
 .prop-panel__textarea:focus { outline: none; border-color: var(--color-primary); }
 

@@ -18,6 +18,7 @@ export function FilmstripScrubber({
   scenes,
   duration,
   time,
+  cuts,
   onSeek,
   onPause,
   onExit,
@@ -25,24 +26,47 @@ export function FilmstripScrubber({
   scenes: StripScene[];
   duration: number;
   time: number;
+  /** Each scene's start time in the take, in seconds. The thumbs are all the
+   *  same width but the scenes are NOT the same length, so the mapping between
+   *  strip space and time is piecewise: the pin sweeps a short scene's thumb
+   *  fast and a long scene's thumb slowly, and the active thumb flips exactly
+   *  when the playhead touches the next cut. Uniform when omitted. */
+  cuts?: number[];
   onSeek: (seconds: number) => void;
   onPause: () => void;
-  /** Double-clicking a thumb zooms back out to the corkboard. */
-  onExit?: () => void;
+  /** Double-clicking zooms back out to the corkboard, landing on the given
+   *  scene — the thumb that was double-clicked, or the playhead's segment. */
+  onExit?: (sceneId?: string) => void;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const scrubbing = useRef(false);
 
-  const frac = duration > 0 ? Math.min(1, Math.max(0, time / duration)) : 0;
-  const segment = Math.min(scenes.length - 1, Math.floor(frac * scenes.length));
+  const n = scenes.length;
+  /** Segment boundaries: n starts plus the take's end. */
+  const bounds =
+    cuts && cuts.length === n
+      ? [...cuts, duration]
+      : Array.from({ length: n + 1 }, (_, i) => (i / n) * duration);
 
-  /** Continuous scrub: pointer x across the strip is a fraction of the take. */
+  const clamped = Math.min(duration, Math.max(0, time));
+  let segment = 0;
+  for (let i = 0; i < n; i++) if (clamped >= bounds[i]) segment = i;
+
+  /** Strip fraction of the playhead: which thumb it is in, plus how far
+   *  through that SCENE it is — not how far through the take. */
+  const segLen = bounds[segment + 1] - bounds[segment];
+  const within = segLen > 0 ? Math.min(1, (clamped - bounds[segment]) / segLen) : 0;
+  const frac = n > 0 ? (segment + within) / n : 0;
+
+  /** Continuous scrub: pointer x picks a thumb and a fraction WITHIN it, and
+   *  time is read back through the same piecewise map the pin rides. */
   const seekAt = (clientX: number) => {
     const row = rowRef.current;
-    if (!row || duration <= 0) return;
+    if (!row || duration <= 0 || n === 0) return;
     const r = row.getBoundingClientRect();
     const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-    onSeek(f * duration);
+    const i = Math.min(n - 1, Math.floor(f * n));
+    onSeek(bounds[i] + (f * n - i) * (bounds[i + 1] - bounds[i]));
   };
 
   return (
@@ -60,8 +84,15 @@ export function FilmstripScrubber({
         aria-valuemax={Math.round(duration)}
         aria-valuenow={Math.round(time * 100) / 100}
         /* On the row, not the thumbs: pointer capture (below) retargets click
-           events to the row, so a thumb-level dblclick handler never fires. */
-        onDoubleClick={onExit}
+           events to the row, so a thumb-level dblclick handler never fires.
+           Exit lands on the scene that was double-clicked — or, from the gaps,
+           on whichever scene holds the playhead. */
+        onDoubleClick={(e) => {
+          if (!onExit) return;
+          const hit = (e.target as HTMLElement).closest('[data-strip-idx]');
+          const i = hit instanceof HTMLElement ? Number(hit.dataset.stripIdx) : segment;
+          onExit(scenes[i]?.id);
+        }}
         onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
           if (e.button !== 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -75,7 +106,7 @@ export function FilmstripScrubber({
             const hit = target.closest('[data-strip-idx]');
             if (hit instanceof HTMLElement && duration > 0) {
               const i = Number(hit.dataset.stripIdx);
-              onSeek((i / scenes.length) * duration);
+              onSeek(bounds[i] ?? 0);
             } else {
               seekAt(e.clientX);
             }
@@ -111,7 +142,9 @@ export function FilmstripScrubber({
       </div>
 
       <span className="anim-strip__index" aria-hidden>
-        {segment + 1} — {scenes.length}
+        <span className="anim-strip__index-now">{segment + 1}</span>
+        {' — '}
+        {scenes.length}
       </span>
     </>
   );

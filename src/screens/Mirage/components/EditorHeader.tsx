@@ -1,5 +1,11 @@
-import { Sidebar } from '@phosphor-icons/react';
+import {
+  ArrowClockwise,
+  ArrowCounterClockwise,
+  DownloadSimple,
+  Sidebar,
+} from '@phosphor-icons/react';
 import { IconButton } from '../../../ui/IconButton';
+import { Button } from '../../../ui/Button';
 
 /**
  * The fixed editor header for both zoom levels: the sidebar toggle and the
@@ -36,6 +42,18 @@ export function EditorHeader({
           <Sidebar size={20} />
         </IconButton>
         <span className="mir-editor__title">{labels[0]}</span>
+      </div>
+
+      <div className="mir-editor__header-right">
+        <IconButton size={40} aria-label="Undo">
+          <ArrowCounterClockwise size={20} />
+        </IconButton>
+        <IconButton size={40} aria-label="Redo">
+          <ArrowClockwise size={20} />
+        </IconButton>
+        <Button variant="primary" leftIcon={<DownloadSimple size={20} weight="bold" />}>
+          Download video
+        </Button>
       </div>
     </header>
   );

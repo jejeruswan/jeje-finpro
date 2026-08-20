@@ -3,7 +3,7 @@ import { AppHeader, EditorCanvas, TimelineResizer, TimelineRuler, Tracks } from 
 import { AttentionPanel } from './components/AttentionPanel';
 import { InteractionPanel } from './components/InteractionPanel';
 import { ScriptPanel } from './components/ScriptPanel';
-import { ShotStylePanel } from './components/ShotStylePanel';
+import { CameraStatePanel } from './components/CameraStatePanel';
 import { PROJECT_TITLE, RAIL } from './data';
 import type { TimelineSelection } from './data';
 import { useResizableTimeline } from './useResizableTimeline';
@@ -22,6 +22,7 @@ export function Animator({
   chatOpen: chatOpenProp,
   onToggleChat: onToggleChatProp,
   strip,
+  initialProgress,
 }: {
   title?: string;
   onBack?: () => void;
@@ -32,13 +33,28 @@ export function Animator({
   /** Chat visibility, when the host wants to own it. Uncontrolled otherwise. */
   chatOpen?: boolean;
   onToggleChat?: () => void;
-  /** Scene sequence for the embedded filmstrip scrubber (Mirage host only). */
-  strip?: { scenes: { id: string; thumb: string }[]; onExit?: () => void };
+  /** Scene sequence for the embedded filmstrip scrubber (Mirage host only).
+   *  onExit receives the scene to land on back at the corkboard. */
+  strip?: { scenes: { id: string; thumb: string }[]; onExit?: (sceneId?: string) => void };
+  /** Where in the take to open, as a fraction [0,1] — the entered scene's
+   *  segment start, so the playhead begins on the scene that was clicked. */
+  initialProgress?: number;
 } = {}) {
   void onBack;
   void breadcrumbs;
   /** Where we are in the take, how wide a second is, how far we've scrolled. */
   const tl = useTimeline();
+
+  // Open ON the entered scene: seek once, on mount, to its segment start —
+  // nudged a few frames in, because the <video> snaps currentTime to frame
+  // boundaries and a snap BACKWARD across the boundary would relabel the
+  // playhead as the previous scene.
+  const seededProgress = useRef(false);
+  useEffect(() => {
+    if (seededProgress.current || !initialProgress) return;
+    seededProgress.current = true;
+    tl.seek(initialProgress * tl.duration + 0.05);
+  }, [tl, initialProgress]);
   /** Every edit the scene can take, with the timing rules enforced inside. */
   const scene = useSceneEditing(tl.duration);
 
@@ -49,6 +65,9 @@ export function Animator({
   const [drawingFor, setDrawingFor] = useState<string | null>(null);
   /** Subject lit on the canvas because its row is hovered in the inspector. */
   const [peekSubjectId, setPeekSubjectId] = useState<string | null>(null);
+  /** The mark just dropped on the line — its inspector opens with the kind
+   *  chips unfolded, because a fresh mark's whole point is choosing one. */
+  const [freshMarkId, setFreshMarkId] = useState<string | null>(null);
   /** Track-level selection: the rail's eye toggles the WHOLE attention track
    *  on, so the stage keeps its targeting overlays live through playback —
    *  no need to select runs one by one. Deliberately does not pause. */
@@ -93,6 +112,28 @@ export function Animator({
     if (kind !== 'attention') setAttnTrackOn(false);
     setSelection((cur) => (cur?.kind === kind && cur.id === id ? null : { kind, id }));
   };
+
+  /* --- Click-away --------------------------------------------------------------
+     Pressing anywhere that is not an editing surface drops the selection, like
+     clicking the canvas in a design tool. The whitelist is every surface a
+     selection lives on or is edited through: clips, the attention line and its
+     rail, the inspectors, the stage's labelling and draw layer, and the
+     transport chrome (ruler, scrubbers, play) — seeking should not close the
+     inspector you are working in. */
+  useEffect(() => {
+    const KEEP =
+      '.prop-panel, .anim-clip, .anim-attn, .anim-rail, .anim-handle, ' +
+      '.anim-hud__box, .anim-area, .anim-drawlayer, .anim-ruler-row, ' +
+      '.anim-resizer, .anim-play, .anim-wave, .anim-strip, .anim-utils';
+    const onDown = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest(KEEP)) return;
+      setSelection(null);
+      setAttnTrackOn(false);
+      setDrawingFor(null);
+    };
+    window.addEventListener('pointerdown', onDown);
+    return () => window.removeEventListener('pointerdown', onDown);
+  }, []);
 
   /* --- Keyboard --------------------------------------------------------------
      Space plays. Arrows nudge the playhead (Shift = a second). Skipped while a
@@ -161,12 +202,20 @@ export function Animator({
     ? scene.rows.find((r) => r.interactions.some((i) => i.id === selectedInteraction.id))
     : undefined;
 
+  /** This run's end is the NEXT mark's start — editing it moves that mark. */
+  const runAfterSelected = selectedRun
+    ? scene.runs[scene.runs.findIndex((r) => r.mark.id === selectedRun.mark.id) + 1]
+    : undefined;
+
   const inspector = (() => {
     if (selectedRun) {
+      const pinned = scene.runs[0]?.mark.id === selectedRun.mark.id;
       return (
         <AttentionPanel
+          key={selectedRun.mark.id}
           run={selectedRun}
-          pinned={scene.runs[0]?.mark.id === selectedRun.mark.id}
+          pinned={pinned}
+          fresh={freshMarkId === selectedRun.mark.id}
           drawing={drawingFor === selectedRun.mark.id}
           onClose={() => {
             setSelection(null);
@@ -183,6 +232,12 @@ export function Animator({
           onPeekSubject={setPeekSubjectId}
           onSetArea={(label) => scene.setMarkArea(selectedRun.mark.id, label)}
           onRedrawArea={() => setDrawingFor(selectedRun.mark.id)}
+          onRetimeStart={
+            pinned ? undefined : (sec) => scene.moveMark(selectedRun.mark.id, sec)
+          }
+          onRetimeEnd={
+            runAfterSelected ? (sec) => scene.moveMark(runAfterSelected.mark.id, sec) : undefined
+          }
           onRemove={() => {
             scene.removeMark(selectedRun.mark.id);
             setSelection(null);
@@ -193,16 +248,19 @@ export function Animator({
     }
     if (selectedShot) {
       return (
-        <ShotStylePanel
+        <CameraStatePanel
+          key={selectedShot.id}
           shot={selectedShot}
-          neighbours={{ hasPrev: shotIndex > 0, hasNext: shotIndex < scene.shots.length - 1 }}
-          playhead={tl.time}
           onClose={() => setSelection(null)}
-          onRename={(label) => scene.renameShot(selectedShot.id, label)}
-          onRoll={(edge, sec) => scene.rollShot(selectedShot.id, edge, sec)}
-          onSetPreset={(preset) => scene.setPreset(selectedShot.id, preset)}
-          onSetSubject={(subjectId) => scene.setShotSubject(selectedShot.id, subjectId)}
-          onSplit={(sec) => scene.splitShot(selectedShot.id, sec)}
+          onPatch={(patch) => scene.patchShot(selectedShot.id, patch)}
+          onRetimeStart={
+            shotIndex > 0 ? (sec) => scene.rollShot(selectedShot.id, 'start', sec) : undefined
+          }
+          onRetimeEnd={
+            shotIndex < scene.shots.length - 1
+              ? (sec) => scene.rollShot(selectedShot.id, 'end', sec)
+              : undefined
+          }
           onRemove={() => {
             scene.removeShot(selectedShot.id);
             setSelection(null);
@@ -213,8 +271,10 @@ export function Animator({
     if (selectedScript && scriptRow) {
       return (
         <ScriptPanel
+          key={selectedScript.id}
           clip={selectedScript}
           speaker={scriptRow.name}
+          color={scriptRow.color}
           rows={scene.rows}
           triggered={scene.rows.flatMap((row) =>
             row.interactions
@@ -234,14 +294,18 @@ export function Animator({
               ),
             )
           }
-          onRemoveInteraction={(id) => scene.removeInteraction(id)}
           onSelectInteraction={(id) => selectClip('interaction', id)}
+          onRemove={() => {
+            scene.removeScript(selectedScript.id);
+            setSelection(null);
+          }}
         />
       );
     }
     if (selectedInteraction && interactionRow) {
       return (
         <InteractionPanel
+          key={selectedInteraction.id}
           it={selectedInteraction}
           actor={interactionRow}
           scripts={scene.rows.flatMap((row) => row.scripts.map((clip) => ({ row, clip })))}
@@ -298,6 +362,13 @@ export function Animator({
                   selectedRun?.mark.kind === 'area' ? (selectedRun.mark.area ?? null) : null
                 }
                 activeArea={activeMark.kind === 'area' ? (activeMark.area ?? null) : null}
+                areaLabel={
+                  (selectedRun?.mark.kind === 'area'
+                    ? selectedRun.mark.areaLabel
+                    : activeMark.kind === 'area'
+                      ? activeMark.areaLabel
+                      : undefined) ?? 'area'
+                }
                 videoRef={videoEl}
                 strip={strip}
               >
@@ -331,8 +402,24 @@ export function Animator({
                     scene={scene}
                     selection={selection}
                     onSelectClip={selectClip}
+                    onCreateMark={(id) => {
+                      setFreshMarkId(id);
+                      selectClip('attention', id);
+                    }}
                     attnTrackOn={attnTrackOn || selection?.kind === 'attention'}
-                    onToggleAttnTrack={() => setAttnTrackOn((v) => !v)}
+                    onToggleAttnTrack={() => {
+                      setAttnTrackOn((v) => {
+                        const next = !v;
+                        // Selection is exclusive across tracks in BOTH
+                        // directions: turning the attention track on drops any
+                        // other track's selection, exactly as selecting another
+                        // track drops attention's.
+                        if (next) {
+                          setSelection((cur) => (cur && cur.kind !== 'attention' ? null : cur));
+                        }
+                        return next;
+                      });
+                    }}
                     time={tl.time}
                     pad={tl.lead}
                     pxPerSec={tl.pxPerSec}

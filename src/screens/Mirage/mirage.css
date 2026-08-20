@@ -31,34 +31,17 @@
   min-height: 0;
 }
 .mir-level--enter-in {
-  animation: mir-enter-in 0.52s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: mir-enter-in 0.6s cubic-bezier(0.2, 0, 0, 1) both;
 }
-.mir-level--enter-out {
-  animation: mir-enter-out 0.52s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
+/* The outgoing level during a flight: still the live subtree, riding above
+   the incoming one while the camera (WAAPI, levelFlight effect) pulls away. */
 .mir-level--ghost {
   pointer-events: none;
   z-index: 5;
 }
-.mir-level--ghost-in {
-  animation: mir-ghost-in 0.5s ease both;
-}
-.mir-level--ghost-out {
-  animation: mir-ghost-out 0.5s ease both;
-}
 @keyframes mir-enter-in {
   from { transform: scale(0.86); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
-}
-@keyframes mir-enter-out {
-  from { transform: scale(1.12); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-@keyframes mir-ghost-in {
-  to { transform: scale(1.1); opacity: 0; }
-}
-@keyframes mir-ghost-out {
-  to { transform: scale(0.88); opacity: 0; }
 }
 
 /* ============================================================================
@@ -996,8 +979,24 @@
 }
 /* Hover: the card stays put and steps up half a surface tone (#1d1f20 →
    #2a2c2d) — the quiet lift, not the full #333437 hover jump. */
-.mir-card:hover {
+/* Hover lift is a VIEW-mode affordance — the edit posture holds its ground. */
+.mir-card:hover:not(.mir-card--editing) {
   background: var(--color-button-disabled);
+}
+/* Posture change (view ⇄ edit): a whisper of a flip — a few degrees of turn
+   with a settle, enough to say "the card turned into a form" without theater.
+   mir-card-in stays FIRST in the list on both sides of the toggle: an
+   animation whose name persists across an animation-name change continues,
+   so adding/removing the turn never restarts the spawn entrance. */
+.mir-card--turn {
+  animation: mir-card-in 0.55s cubic-bezier(0.18, 0.9, 0.3, 1.1) both,
+    mir-card-turn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes mir-card-turn {
+  from {
+    transform: perspective(1400px) rotateY(-10deg) scale(0.985);
+    opacity: 0.55;
+  }
 }
 @keyframes mir-card-in {
   from { opacity: 0; transform: translateY(22px) scale(0.92); }
@@ -1021,13 +1020,18 @@
   object-fit: cover;
   display: block;
   opacity: 1;
-  transition: opacity 0.6s ease;
+  filter: blur(0);
+  transform: scale(1);
+  /* The render RESOLVES: blur pulls focus over ~1.2s while the slight
+     over-zoom settles — a picture developing, never a gray block. */
+  transition: filter 1.2s ease, transform 1.2s ease;
 }
-/* Loading placeholder: while a render cooks (or re-cooks) the frame is a
-   plain surface block — the thumb container's own fill — and the image fades
-   in when the render lands. No shimmer, no blur. */
+/* While a render cooks (or RE-cooks after a generative edit) the thumbnail is
+   a heavy out-of-focus version of itself. The over-scale keeps the blur's
+   soft edges outside the frame. */
 .mir-card--cooking .mir-card__thumb img {
-  opacity: 0;
+  filter: blur(26px);
+  transform: scale(1.12);
 }
 .mir-card__cooking-dot {
   position: absolute;
@@ -1156,23 +1160,29 @@
 .mir-cast--done:hover { background: rgba(0, 208, 255, 0.15); }
 
 /* Cast popover: floats above the footer inside the editing card. */
+/* Cast popover, in the attention-picker's dress (attn-menu): frosted glass,
+   left-aligned, dropping right below the avatars row. */
 .mir-cast-menu {
   position: absolute;
-  right: 12px;
-  bottom: 52px;
-  z-index: 5;
-  width: 226px;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  z-index: 30;
+  width: 214px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-8);
-  background: var(--color-surface-hover);
-  border: 0.5px solid var(--color-hairline);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border-bottom: 1px solid var(--color-hairline);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  animation: mir-insert-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mir-menu-in 140ms ease;
   transform: none;
   cursor: auto;
+}
+@keyframes mir-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(0.98); }
 }
 .mir-cast-menu__head {
   margin: 0;
@@ -1204,18 +1214,21 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
+  min-height: 30px;
   padding: var(--space-6) var(--space-8);
   border: none;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--color-text-primary);
   font-family: var(--font-brand);
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
+  font-weight: 500;
   letter-spacing: var(--tracking-body);
   text-align: left;
   cursor: pointer;
+  transition: background 0.1s ease;
 }
-.mir-cast-menu__row:hover { background: rgba(255, 255, 255, 0.08); }
+.mir-cast-menu__row:hover { background: var(--color-surface-hover); }
 .mir-cast-menu__row--primary { color: var(--color-primary); }
 .mir-cast-menu__row--danger { color: #ff8a85; }
 .mir-cast-menu__chip {
@@ -1235,10 +1248,193 @@
    Entered via the pencil (hover), exited via ✓ / Escape. In place — no flip,
    no modal: title and summary become inputs, the badge a scrubbable duration,
    the cast row editable. The OS cursor returns over the editing card. */
+/* Edit posture (718-136736): the card keeps its own surface — the FIELDS are
+   the darker tone — and the whole face becomes the Edit Scene form. */
 .mir-card--editing {
-  background: var(--color-button-disabled);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 0 50px rgba(0, 0, 0, 0.25);
+  background: var(--color-bg-secondary);
   cursor: auto;
+}
+
+.mir-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-height: 0;
+  width: 100%;
+  /* The whole face scrolls when the form outgrows the card — no scrollbar,
+     just the drop shadow below hinting at more. */
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+.mir-edit::-webkit-scrollbar { display: none; }
+/* "More below": a quiet gradient above the confirm row while the form has
+   content past the fold. */
+.mir-edit__more {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 49px;
+  height: 40px;
+  background: linear-gradient(to top, var(--color-bg-secondary), rgba(29, 31, 32, 0));
+  pointer-events: none;
+  animation: mir-fade-in 0.2s ease both;
+}
+@keyframes mir-fade-in {
+  from { opacity: 0; }
+}
+.mir-edit__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mir-edit__heading {
+  padding: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+}
+.mir-edit__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.mir-edit__close:hover { background: var(--color-surface-hover); }
+
+.mir-edit__section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.mir-edit__label {
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0.025em;
+  color: var(--color-text-tertiary);
+}
+.mir-edit__field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 10px;
+  background: var(--color-button-disabled);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0.025em;
+  color: var(--color-text-primary);
+}
+.mir-edit__field:focus-within,
+input.mir-edit__field:focus,
+textarea.mir-edit__field:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.mir-edit__area {
+  resize: none;
+  min-height: 59px;
+  font-family: inherit;
+  /* No inner scroll: the textarea grows with its content and the CARD scrolls. */
+  overflow: hidden;
+}
+
+/* Duration + the joined start/end pair. */
+.mir-edit__times {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+.mir-edit__section--duration { flex: 0 0 80px; width: 80px; }
+.mir-edit__field--suffix {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.mir-edit__field--suffix input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--color-text-primary);
+  outline: none;
+}
+.mir-edit__suffix { color: var(--color-text-secondary); }
+.mir-edit__pair {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+.mir-edit__pair .mir-edit__section { flex: 1; }
+.mir-edit__field--start { border-radius: 8px 0 0 8px; }
+.mir-edit__field--end { border-radius: 0 8px 8px 0; }
+
+/* Avatars row: separated chips, the white + leading them. The wrap anchors
+   the cast popover left-aligned right below the row. */
+.mir-edit__castwrap {
+  position: relative;
+  width: 100%;
+}
+.mir-edit__cast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.mir-edit__cast .mir-cast {
+  width: 32px;
+  height: 32px;
+  margin-left: 0 !important;
+  cursor: pointer !important;
+  transition: transform 0.15s ease;
+}
+.mir-edit__cast .mir-cast:hover { transform: scale(1.1); }
+.mir-cast--plus {
+  background: var(--color-white);
+  color: var(--color-gray-900);
+  border: 2px solid var(--color-bg-secondary);
+  cursor: pointer !important;
+}
+
+/* Commit: quiet until something changed, then the primary cyan — dark glyph,
+   since the lit button is brighter than anything around it. */
+.mir-edit__confirm {
+  align-self: flex-end;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-gray-900);
+  cursor: pointer;
+}
+.mir-edit__confirm:disabled {
+  background: var(--color-button-disabled);
+  color: var(--color-text-tertiary);
+  cursor: default;
 }
 .mir-board--editing .mir-card--editing,
 .mir-board--editing .mir-card--editing * { cursor: auto !important; }
@@ -1286,7 +1482,49 @@
 
 /* --- Drag-to-reorder ------------------------------------------------------------- */
 .mir-slot { flex: 0 0 auto; }
-.mir-slot__drag { touch-action: pan-x; }
+.mir-slot__drag {
+  touch-action: pan-x;
+  position: relative; /* anchors the hover actions under the card */
+}
+
+/* --- Hover actions (718-136736): pencil + trash above the card --------------
+   The padding-bottom bridges the 16px gap to the card, so gliding up from the
+   card to the icons never breaks the :hover that reveals them. */
+.mir-card-actions {
+  position: absolute;
+  bottom: 100%;
+  right: 13px;
+  z-index: 3;
+  display: flex;
+  gap: 14px;
+  padding-bottom: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.mir-slot__drag:hover .mir-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mir-board--dragging .mir-card-actions {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.mir-card-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.mir-card-actions__btn:hover { color: var(--color-text-primary); }
+.mir-card-actions__btn--danger:hover { color: #ff6b6b; }
 .mir-slot__drag--lifted {
   position: relative;
   z-index: 40;
@@ -1517,6 +1755,12 @@
   object-fit: cover;
   display: block;
 }
+/* The hero's live video frame, stacked over its thumbnail: dissolves away
+   mid-flight so the landing pixels already match the card underneath. */
+.mir-flight__live {
+  position: absolute;
+  inset: 0;
+}
 
 /* While clones fly IN, the canvas's own shared elements wait unseen… */
 .mir-stage[data-morph] .anim-preview__video,
@@ -1527,20 +1771,45 @@
 .mir-stage[data-morph] .anim-strip__index {
   opacity: 0 !important;
 }
-/* …and the supporting chrome (tools, timeline) fades up on arrival. */
+/* …and the supporting chrome (tools, timeline) rises up UNDER the landing
+   clones: `mir-stage--reveal` lands at ~55% of the flight, so the reveal
+   overlaps the flight instead of queuing behind it. */
 .mir-editor :is(.anim-utils, .anim-resizer, .anim-timeline) {
-  transition: opacity 0.25s ease;
+  transition: opacity 0.3s ease, transform 0.42s cubic-bezier(0.2, 0, 0, 1);
 }
-.mir-stage[data-morph] :is(.anim-utils, .anim-resizer, .anim-timeline) {
+.mir-stage[data-morph]:not(.mir-stage--reveal) :is(.anim-utils, .anim-resizer, .anim-timeline) {
   opacity: 0;
+  transform: translateY(14px);
 }
-/* Flying OUT, the grid's card thumbnails hold empty until their clones land. */
+/* What snaps on at landing gets a short ease instead (the strip itself stays
+   a hard swap — its landed clones cover it pixel-for-pixel). */
+.mir-editor :is(.anim-hud, .anim-play, .anim-strip__index) {
+  transition: opacity 0.2s ease;
+}
+/* The ghost corkboard's thumbnails empty out while their clones fly… */
+.mir-stage[data-morph='in'] .mir-card__thumb img {
+  visibility: hidden !important;
+}
+/* …and thumbnails waiting on inbound clones hold a quiet dark well, not the
+   bright placeholder gray (which reads as broken for the flight's duration). */
+.mir-stage[data-morph] .mir-card__thumb {
+  background: var(--color-bg-secondary);
+}
+/* Flying OUT, the grid's card thumbnails hold empty until their clones land.
+   Held via VISIBILITY, not opacity: the img carries a 0.6s opacity transition
+   (the cooking reveal), so releasing an opacity hold would fade the thumb in
+   UNDER the landed clone — a milky wash after an otherwise perfect landing.
+   Visibility isn't transitioned, so the reveal is instant and pixel-exact. */
 .mir-stage[data-morph='out'] .mir-card__thumb img {
-  opacity: 0 !important;
+  visibility: hidden !important;
 }
 /* Returning from the canvas, the cards are already materialized — no spawn
    entrance. The cards must be AT REST when the flight measures its landing
    rects, or the hero glides to a spot the cards then drift away from. */
 .mir-board--return .mir-card {
   animation: none;
+}
+/* …but the posture flip still plays there — just without the entrance. */
+.mir-board--return .mir-card--turn {
+  animation: mir-card-turn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

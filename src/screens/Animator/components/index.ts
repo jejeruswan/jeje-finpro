@@ -6,7 +6,7 @@ export { ChatPanel } from './ChatPanel';
 export { EditorCanvas } from './EditorCanvas';
 export { InteractionPanel } from './InteractionPanel';
 export { ScriptPanel } from './ScriptPanel';
-export { ShotStylePanel } from './ShotStylePanel';
+export { CameraStatePanel } from './CameraStatePanel';
 export { TimeField, TextField } from './PanelFields';
 export { TimelineResizer } from './TimelineResizer';
 export { TimelineRuler } from './TimelineRuler';

@@ -21,12 +21,25 @@
 export const RAIL = 42;
 
 /* --- The raw take ----------------------------------------------------------
-   Level 3 directs a WINDOW of the source footage, not the whole file: the
-   placeholder runs 13:14, and a scene is the first 32 seconds of it.
+   Level 3 directs a WINDOW of the source footage, not the whole file.
    `SOURCE_IN` is where this take starts in the file, so timeline time `t` is
-   source time `SOURCE_IN + t`. */
+   source time `SOURCE_IN + t`. The placeholder take is the 8 storyboard
+   thumbnails stacked into one 32s video (5 / 3 / 4 / 6 / 2.5 / 4.5 / 3 / 4s),
+   so every annotation below is written against those cuts. */
 
-export const SOURCE_VIDEO = '/assets/videoplaceholder.mp4';
+export const SOURCE_VIDEO = '/assets/placeholder-take.webm';
+
+/** How long each stacked thumbnail actually holds the screen — the take's
+ *  real cuts. The filmstrip scrubber maps its equal-width thumbs through
+ *  these, so its pin crosses a short scene fast and a long scene slowly, and
+ *  the active thumb flips exactly when the picture does. */
+export const TAKE_SEGMENT_DURATIONS = [5, 3, 4, 6, 2.5, 4.5, 3, 4];
+
+/** Each segment's start time in the take, accumulated from the durations. */
+export const TAKE_CUTS: number[] = TAKE_SEGMENT_DURATIONS.reduce<number[]>(
+  (starts, _d, i) => [...starts, i === 0 ? 0 : starts[i - 1] + TAKE_SEGMENT_DURATIONS[i - 1]],
+  [],
+);
 /** Where this take begins inside the source file, in seconds. */
 export const SOURCE_IN = 0;
 /** The take's length. Fixed by the footage — editing redistributes time inside
@@ -102,36 +115,50 @@ export type Subject = {
   provenance: 'generated' | 'detected';
 };
 
-/* The take's four beats:
-     0–7   living room — vacuuming
-     7–15  kitchen counter — lemon and sparkling water
-     15–21 bedroom — opening up the curtains
-     21–32 bedroom — making the bed                                          */
+/* The take's beats, one per storyboard thumbnail:
+     0–5     laundry closet — loading the washer
+     5–8     living room — vacuuming by the dining table
+     8–12    bathroom — hair goes up
+     12–18   kitchen island — the plan, straight to camera
+     18–20.5 kitchen counter — lemon and sparkling water (the product beat)
+     20.5–32 sofa — the recap, straight to camera (three cuts, one room)     */
 
 export const SUBJECTS: Subject[] = [
-  // Beat 1 — living room
-  { id: 'olivia-a', kind: 'person', label: 'Olivia', box: { x: 31, y: 8, w: 15, h: 83 }, from: 0, to: 7, provenance: 'detected' },
-  { id: 'vacuum', kind: 'prop', label: 'Vacuum', box: { x: 22, y: 68, w: 15, h: 25 }, from: 0, to: 7, provenance: 'detected' },
-  { id: 'sofa', kind: 'set', label: 'Sofa', box: { x: 61, y: 39, w: 32, h: 39 }, from: 0, to: 7, provenance: 'detected' },
+  // Beat 1 — laundry closet
+  { id: 'olivia-a', kind: 'person', label: 'Olivia', box: { x: 42, y: 16, w: 26, h: 78 }, from: 0, to: 5, provenance: 'detected' },
+  { id: 'washer', kind: 'prop', label: 'Washer dryer', box: { x: 58, y: 6, w: 32, h: 86 }, from: 0, to: 5, provenance: 'detected' },
+  { id: 'basket', kind: 'prop', label: 'Laundry basket', box: { x: 2, y: 56, w: 34, h: 42 }, from: 0, to: 5, provenance: 'detected' },
 
-  // Beat 2 — kitchen counter. The product beat.
-  { id: 'olivia-b', kind: 'person', label: 'Olivia', box: { x: 33, y: 7, w: 36, h: 59 }, from: 7, to: 15, provenance: 'detected' },
-  { id: 'perrier', kind: 'product', label: 'Maison Perrier', box: { x: 36, y: 42, w: 9, h: 40 }, from: 7, to: 15, provenance: 'detected' },
-  { id: 'glass', kind: 'prop', label: 'Glass', box: { x: 53, y: 53, w: 8, h: 27 }, from: 7, to: 15, provenance: 'detected' },
-  { id: 'lemon', kind: 'prop', label: 'Lemon', box: { x: 45, y: 65, w: 7, h: 12 }, from: 7, to: 15, provenance: 'detected' },
-  { id: 'takeout', kind: 'product', label: 'Takeout trays', box: { x: 68, y: 64, w: 25, h: 18 }, from: 7, to: 15, provenance: 'detected' },
+  // Beat 2 — living room
+  { id: 'olivia-b', kind: 'person', label: 'Olivia', box: { x: 38, y: 10, w: 20, h: 72 }, from: 5, to: 8, provenance: 'detected' },
+  { id: 'vacuum', kind: 'prop', label: 'Vacuum', box: { x: 33, y: 58, w: 14, h: 34 }, from: 5, to: 8, provenance: 'detected' },
+  { id: 'table', kind: 'set', label: 'Dining table', box: { x: 52, y: 40, w: 34, h: 48 }, from: 5, to: 8, provenance: 'detected' },
+  { id: 'flowers', kind: 'prop', label: 'Flower vase', box: { x: 60, y: 18, w: 15, h: 32 }, from: 5, to: 8, provenance: 'detected' },
+  { id: 'fan', kind: 'prop', label: 'Fan', box: { x: 5, y: 30, w: 13, h: 50 }, from: 5, to: 8, provenance: 'detected' },
 
-  // Beat 3 — bedroom, curtains
-  { id: 'olivia-c', kind: 'person', label: 'Olivia', box: { x: 53, y: 10, w: 17, h: 76 }, from: 15, to: 21, provenance: 'detected' },
-  { id: 'window', kind: 'light', label: 'Window light', box: { x: 2, y: 2, w: 29, h: 81 }, from: 15, to: 21, provenance: 'detected' },
-  { id: 'lamp-c', kind: 'light', label: 'Floor lamp', box: { x: 46, y: 25, w: 9, h: 39 }, from: 15, to: 21, provenance: 'detected' },
+  // Beat 3 — bathroom
+  { id: 'olivia-c', kind: 'person', label: 'Olivia', box: { x: 27, y: 8, w: 36, h: 90 }, from: 8, to: 12, provenance: 'detected' },
+  { id: 'towels', kind: 'prop', label: 'Towels', box: { x: 60, y: 62, w: 28, h: 32 }, from: 8, to: 12, provenance: 'detected' },
 
-  // Beat 4 — bedroom, making the bed
-  { id: 'olivia-d', kind: 'person', label: 'Olivia', box: { x: 6, y: 28, w: 21, h: 55 }, from: 21, to: SCENE_DURATION, provenance: 'detected' },
-  { id: 'bed', kind: 'set', label: 'Bed', box: { x: 20, y: 58, w: 66, h: 35 }, from: 21, to: SCENE_DURATION, provenance: 'detected' },
-  { id: 'lamp-d', kind: 'light', label: 'Floor lamp', box: { x: 52, y: 25, w: 6, h: 39 }, from: 21, to: SCENE_DURATION, provenance: 'detected' },
-  { id: 'artprint', kind: 'prop', label: 'Art print', box: { x: 37, y: 55, w: 9, h: 15 }, from: 21, to: SCENE_DURATION, provenance: 'detected' },
-  { id: 'stool', kind: 'prop', label: 'Stool', box: { x: 46, y: 57, w: 8, h: 12 }, from: 21, to: SCENE_DURATION, provenance: 'detected' },
+  // Beat 4 — kitchen island, to camera
+  { id: 'olivia-d', kind: 'person', label: 'Olivia', box: { x: 16, y: 2, w: 52, h: 96 }, from: 12, to: 18, provenance: 'detected' },
+  { id: 'island', kind: 'set', label: 'Kitchen island', box: { x: 66, y: 40, w: 33, h: 28 }, from: 12, to: 18, provenance: 'detected' },
+  { id: 'pendants', kind: 'light', label: 'Pendant lights', box: { x: 70, y: 6, w: 22, h: 20 }, from: 12, to: 18, provenance: 'detected' },
+
+  // Beat 5 — kitchen counter. The product beat.
+  { id: 'olivia-e', kind: 'person', label: 'Olivia', box: { x: 33, y: 0, w: 38, h: 74 }, from: 18, to: 20.5, provenance: 'detected' },
+  { id: 'perrier', kind: 'product', label: 'Maison Perrier', box: { x: 9, y: 44, w: 13, h: 52 }, from: 18, to: 20.5, provenance: 'detected' },
+  { id: 'glass', kind: 'prop', label: 'Glass', box: { x: 50, y: 55, w: 13, h: 36 }, from: 18, to: 20.5, provenance: 'detected' },
+  { id: 'lemon', kind: 'prop', label: 'Lemon', box: { x: 2, y: 76, w: 10, h: 16 }, from: 18, to: 20.5, provenance: 'detected' },
+  { id: 'takeout', kind: 'product', label: 'Takeout trays', box: { x: 67, y: 62, w: 28, h: 34 }, from: 18, to: 20.5, provenance: 'detected' },
+  { id: 'kettle', kind: 'prop', label: 'Kettle', box: { x: 7, y: 20, w: 14, h: 22 }, from: 18, to: 20.5, provenance: 'detected' },
+
+  // Beats 6–8 — the sofa. Three cuts of the same setup, so one set of subjects.
+  { id: 'olivia-f', kind: 'person', label: 'Olivia', box: { x: 28, y: 0, w: 46, h: 100 }, from: 20.5, to: SCENE_DURATION, provenance: 'detected' },
+  { id: 'plant', kind: 'prop', label: 'Eucalyptus plant', box: { x: 2, y: 8, w: 26, h: 44 }, from: 20.5, to: SCENE_DURATION, provenance: 'detected' },
+  { id: 'window', kind: 'light', label: 'Window light', box: { x: 10, y: 0, w: 18, h: 62 }, from: 20.5, to: SCENE_DURATION, provenance: 'detected' },
+  { id: 'sofa', kind: 'set', label: 'Sofa', box: { x: 0, y: 56, w: 100, h: 44 }, from: 20.5, to: SCENE_DURATION, provenance: 'detected' },
+  { id: 'doorway', kind: 'set', label: 'Doorway', box: { x: 74, y: 12, w: 20, h: 76 }, from: 20.5, to: SCENE_DURATION, provenance: 'detected' },
 ];
 
 export const subjectById = (id: string): Subject =>
@@ -159,18 +186,18 @@ export const subjectsIn = (from: number, to: number): Subject[] =>
 
 export type AttentionKind = 'object' | 'area' | 'none';
 
-/** A drawn region of the frame: centre + radii, in stage percentages, so it
- *  rides the framing transform exactly like the object graph's boxes. Soft
- *  ellipse, deliberately unlike the objects' hard rectangles — solid means "a
- *  definite thing", soft means "a region", on canvas as on the line. */
-export type AreaRegion = { cx: number; cy: number; rx: number; ry: number };
+/** A drawn region of the frame: a rectangle in stage percentages, so it rides
+ *  the framing transform exactly like the object graph's boxes. */
+export type AreaRegion = { x: number; y: number; w: number; h: number };
 
-/** Auto-name a region from where it sits, so a fresh area never reads as the
- *  generic "Area". Overridable in the inspector. */
+/** The model names a fresh region from where it sits ("middle bottom"), per
+ *  the design. Overridable in the inspector. */
 export function autoAreaName(r: AreaRegion): string {
-  const col = r.cx < 34 ? 'left' : r.cx > 66 ? 'right' : 'centre';
-  const row = r.cy < 34 ? 'Upper' : r.cy > 66 ? 'Lower' : 'Middle';
-  return row === 'Middle' && col === 'centre' ? 'Centre' : `${row} ${col}`;
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const col = cx < 34 ? 'left' : cx > 66 ? 'right' : 'middle';
+  const row = cy < 34 ? 'top' : cy > 66 ? 'bottom' : 'middle';
+  return col === 'middle' && row === 'middle' ? 'middle' : `${col} ${row}`;
 }
 
 export type AttentionMark = {
@@ -192,11 +219,13 @@ export const MIN_MARK_GAP = 0.25;
 /** There is always a mark at t = 0, so every instant has a state in force. */
 export const ATTENTION_MARKS: AttentionMark[] = [
   { id: 'm0', t: 0, kind: 'object', subjectId: 'olivia-a' },
-  { id: 'm1', t: 7, kind: 'object', subjectId: 'perrier' },
-  { id: 'm2', t: 11, kind: 'area', areaLabel: 'Counter top', area: { cx: 55, cy: 66, rx: 30, ry: 22 } },
-  { id: 'm3', t: 15, kind: 'none' },
-  { id: 'm4', t: 21, kind: 'area', areaLabel: 'Bed corner', area: { cx: 40, cy: 72, rx: 32, ry: 18 } },
-  { id: 'm5', t: 26, kind: 'object', subjectId: 'olivia-d' },
+  { id: 'm1', t: 3, kind: 'area', areaLabel: 'Basket corner', area: { x: 2, y: 54, w: 36, h: 44 } },
+  { id: 'm2', t: 5, kind: 'object', subjectId: 'olivia-b' },
+  { id: 'm3', t: 8, kind: 'none' },
+  { id: 'm4', t: 12, kind: 'object', subjectId: 'olivia-d' },
+  { id: 'm5', t: 18, kind: 'object', subjectId: 'perrier' },
+  { id: 'm6', t: 20.5, kind: 'object', subjectId: 'olivia-f' },
+  { id: 'm7', t: 28, kind: 'area', areaLabel: 'Sofa corner', area: { x: 0, y: 52, w: 44, h: 46 } },
 ];
 
 /** A derived stretch between two marks. `mark` is the mark that starts it. */
@@ -233,66 +262,150 @@ export function markLabel(mark: AttentionMark): string {
   return 'None';
 }
 
-/* --- Shot styles (framing) -------------------------------------------------- */
+/* --- Camera state (rig · framing · anchor · stability) ----------------------
+   A camera state is a virtual reframe of the one raw take, not a separate
+   render — which is why the preview can apply it as a transform and why a
+   state boundary can move without anything re-rendering. Four properties,
+   per the design's Edit Camera State panel:
+     rig       — how the camera is held (flavour; names the clip)
+     framing   — how tight the crop is (drives the zoom)
+     anchor    — what the crop centres on (face / object / environment)
+     stability — 0–100, how steady the rig is (flavour; names the clip) */
 
-/** Camera framing presets. A shot style is a virtual reframe of the one raw
- *  take, not a separate render — which is why the preview can apply it as a
- *  transform and why a shot boundary can move without anything re-rendering. */
-export type ShotPreset = 'wide' | 'mid' | 'cu';
+export type CameraRig = 'selfie' | 'handheld' | 'static' | 'drone' | 'pov';
+
+export const CAMERA_RIGS: { id: CameraRig; label: string }[] = [
+  { id: 'selfie', label: 'Selfie' },
+  { id: 'handheld', label: 'Handheld' },
+  { id: 'static', label: 'Static' },
+  { id: 'drone', label: 'Drone' },
+  { id: 'pov', label: 'POV' },
+];
+
+export type ShotPreset = 'wide' | 'medium' | 'cu' | 'xcu';
 
 export const SHOT_PRESETS: { id: ShotPreset; label: string; zoom: number }[] = [
   { id: 'wide', label: 'Wide', zoom: 1 },
-  { id: 'mid', label: 'Mid', zoom: 1.45 },
-  { id: 'cu', label: 'CU', zoom: 2.1 },
+  { id: 'medium', label: 'Medium', zoom: 1.45 },
+  { id: 'cu', label: 'Close up', zoom: 2.1 },
+  { id: 'xcu', label: 'Extreme close up', zoom: 2.8 },
 ];
 
+/** What the crop centres on. `face` finds the person in frame, `object` uses
+ *  the state's own subject, `environment` keeps the frame's centre. */
+export type CameraAnchor = 'face' | 'object' | 'environment';
+
+export const CAMERA_ANCHORS: { id: CameraAnchor; label: string }[] = [
+  { id: 'face', label: 'Face Track' },
+  { id: 'object', label: 'Object' },
+  { id: 'environment', label: 'Environment' },
+];
+
+/** A shot's framing as numbers: zoom + translate (in full-frame %). */
+export type Framing = { z: number; dx: number; dy: number };
+
 /**
- * The framing a shot applies to the stage, as a CSS transform. Derived from the
- * SUBJECT rather than hand-tuned: a close-up on the bottle crops to the bottle,
- * so the clip's tag and the picture can't disagree. The translate is clamped to
- * what the scaled frame can still cover.
+ * The framing a shot applies to the stage. Derived from the SUBJECT rather
+ * than hand-tuned: a close-up on the bottle crops to the bottle, so the clip's
+ * tag and the picture can't disagree. The translate is clamped to what the
+ * scaled frame can still cover.
  */
-export function framingFor(preset: ShotPreset, subject: Subject | undefined): string | undefined {
+export function framingParams(preset: ShotPreset, subject: Subject | undefined): Framing {
   const p = SHOT_PRESETS.find((x) => x.id === preset);
-  if (!p) return undefined;
-  if (p.zoom === 1 || !subject) return 'scale(1)';
+  if (!p || p.zoom === 1 || !subject) return { z: 1, dx: 0, dy: 0 };
   const limit = 50 - 50 / p.zoom;
   const clamp = (v: number) => Math.max(-limit, Math.min(limit, v));
-  const dx = clamp(50 - (subject.box.x + subject.box.w / 2));
-  const dy = clamp(50 - (subject.box.y + subject.box.h / 2));
-  return `scale(${p.zoom}) translate(${dx}%, ${dy}%)`;
+  return {
+    z: p.zoom,
+    dx: clamp(50 - (subject.box.x + subject.box.w / 2)),
+    dy: clamp(50 - (subject.box.y + subject.box.h / 2)),
+  };
+}
+
+/** The framing as a CSS transform — applied to the VIDEO only. */
+export function framingFor(preset: ShotPreset, subject: Subject | undefined): string {
+  const f = framingParams(preset, subject);
+  return f.z === 1 ? 'scale(1)' : `scale(${f.z}) translate(${f.dx}%, ${f.dy}%)`;
+}
+
+/**
+ * Where a full-frame rect lands ON SCREEN under a framing. The HUD maps its
+ * geometry through this instead of riding the video's CSS transform, so boxes
+ * track their subjects through any crop while strokes, chips and corner
+ * handles keep their true size — labelling is chrome, and chrome never zooms.
+ */
+export function mapRegion(f: Framing, r: AreaRegion): AreaRegion {
+  return {
+    x: 50 + (r.x + f.dx - 50) * f.z,
+    y: 50 + (r.y + f.dy - 50) * f.z,
+    w: r.w * f.z,
+    h: r.h * f.z,
+  };
+}
+
+/**
+ * Intersect a screen-space rect with the frame. A box may cover the whole
+ * frame or, under a crop, spill past its edges — the drawn selection must
+ * never exceed the picture. `null` when the crop pushes it (almost) fully
+ * out of view, so callers can skip drawing it at all.
+ */
+export function clipRegion(r: AreaRegion): AreaRegion | null {
+  const x1 = Math.max(0, r.x);
+  const y1 = Math.max(0, r.y);
+  const x2 = Math.min(100, r.x + r.w);
+  const y2 = Math.min(100, r.y + r.h);
+  if (x2 - x1 < 2 || y2 - y1 < 2) return null;
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }
 
 /** The cast. Olivia presents on camera; Blake is off camera, which is why he has
  *  script and reaction lanes but never appears in the object graph. */
 export const SPEAKERS = ['Olivia', 'Blake'] as const;
 
-/** The tag a shot carries once its preset or subject changes. */
-export function presetLabel(preset: ShotPreset, subjectLabel: string): string {
-  const p = SHOT_PRESETS.find((x) => x.id === preset) ?? SHOT_PRESETS[0];
-  return `${p.label} - ${subjectLabel}`;
-}
-
 /** Shortest shot a trim will let you squeeze a clip down to. */
 export const MIN_SHOT_SEC = 0.5;
 
 export type Shot = {
   id: string;
-  label: string;
+  rig: CameraRig;
   preset: ShotPreset;
+  anchor: CameraAnchor;
+  /** 0–100, how steady the rig is. */
+  stability: number;
   start: number;
   end: number;
-  /** What this framing is on. Drives both the clip's tag and the actual crop. */
+  /** The `object` anchor's target; `face` finds the person on its own. */
   subjectId: string;
 };
 
+/** The state's derived name — "Selfie - Wide - Face Track - 42". Both the
+ *  panel's summary row and the timeline clip wear it, so they can't disagree. */
+export function cameraStateName(shot: Shot): string {
+  const rig = CAMERA_RIGS.find((r) => r.id === shot.rig) ?? CAMERA_RIGS[0];
+  const framing = SHOT_PRESETS.find((p) => p.id === shot.preset) ?? SHOT_PRESETS[0];
+  const anchor = CAMERA_ANCHORS.find((a) => a.id === shot.anchor) ?? CAMERA_ANCHORS[0];
+  return `${rig.label} - ${framing.label} - ${anchor.label} - ${Math.round(shot.stability)}`;
+}
+
+/** The subject the crop should centre on, per the state's anchor. */
+export function framingSubject(shot: Shot): Subject | undefined {
+  if (shot.anchor === 'environment') return undefined;
+  if (shot.anchor === 'face') {
+    return (
+      subjectsIn(shot.start, shot.end).find((s) => s.kind === 'person') ??
+      subjectById(shot.subjectId)
+    );
+  }
+  return subjectById(shot.subjectId);
+}
+
 export const SHOTS: Shot[] = [
-  { id: 's1', label: 'Wide - Living room', preset: 'wide', start: 0, end: 7, subjectId: 'olivia-a' },
-  { id: 's2', label: 'CU - Maison Perrier', preset: 'cu', start: 7, end: 11, subjectId: 'perrier' },
-  { id: 's3', label: 'Mid - Glass', preset: 'mid', start: 11, end: 15, subjectId: 'glass' },
-  { id: 's4', label: 'Wide - Bedroom', preset: 'wide', start: 15, end: 21, subjectId: 'window' },
-  { id: 's5', label: 'Mid - Bed', preset: 'mid', start: 21, end: 26, subjectId: 'bed' },
-  { id: 's6', label: 'Wide - Bedroom', preset: 'wide', start: 26, end: SCENE_DURATION, subjectId: 'olivia-d' },
+  { id: 's1', rig: 'handheld', preset: 'wide', anchor: 'environment', stability: 35, start: 0, end: 5, subjectId: 'olivia-a' },
+  { id: 's2', rig: 'handheld', preset: 'wide', anchor: 'face', stability: 40, start: 5, end: 8, subjectId: 'olivia-b' },
+  { id: 's3', rig: 'static', preset: 'medium', anchor: 'face', stability: 75, start: 8, end: 12, subjectId: 'olivia-c' },
+  { id: 's4', rig: 'static', preset: 'wide', anchor: 'environment', stability: 85, start: 12, end: 18, subjectId: 'olivia-d' },
+  { id: 's5', rig: 'handheld', preset: 'cu', anchor: 'object', stability: 42, start: 18, end: 20.5, subjectId: 'perrier' },
+  { id: 's6', rig: 'selfie', preset: 'wide', anchor: 'face', stability: 50, start: 20.5, end: SCENE_DURATION, subjectId: 'olivia-f' },
 ];
 
 /* --- Script ------------------------------------------------------------------ */
@@ -343,15 +456,20 @@ export type Interaction = {
 };
 
 export const EMOJI_CHOICES: { emoji: string; label: string }[] = [
-  { emoji: '🙂', label: ':slightly-smiling' },
-  { emoji: '🫶', label: ':heart-hands' },
   { emoji: '😂', label: ':joy' },
-  { emoji: '🎉', label: ':party-popper' },
-  { emoji: '🙌', label: ':raised-hands' },
-  { emoji: '📞', label: ':telephone' },
-  { emoji: '🤩', label: ':star-struck' },
-  { emoji: '👀', label: ':eyes' },
-  { emoji: '👉', label: ':point-right' },
+  { emoji: '🫶', label: ':heart-hands' },
+  { emoji: '😛', label: ':tongue-out' },
+  { emoji: '🤳', label: ':selfie' },
+  { emoji: '😭', label: ':loudly-crying' },
+  { emoji: '😔', label: ':pensive' },
+  { emoji: '💪', label: ':flex' },
+  { emoji: '🥺', label: ':pleading' },
+  { emoji: '🤷', label: ':shrug' },
+  { emoji: '🧍', label: ':standing' },
+  { emoji: '🫵', label: ':point-at-you' },
+  { emoji: '😱', label: ':scream' },
+  { emoji: '🙅', label: ':no-good' },
+  { emoji: '🚶', label: ':walking' },
 ];
 
 /** Shortest window an interaction can hold. */
@@ -381,33 +499,45 @@ export const AVATAR_ROWS: AvatarRow[] = [
       {
         id: 'ol-1',
         start: 0.5,
-        end: 6.5,
-        words: speak('Starting the morning with a full reset of the apartment', 0.5, 6.5),
+        end: 4.5,
+        words: speak('Laundry in first because this pile is out of control', 0.5, 4.5),
       },
       {
         id: 'ol-2',
-        start: 7.5,
-        end: 14,
-        words: speak('Lemon, ice, and a whole bottle of Maison Perrier', 7.5, 14),
+        start: 5.3,
+        end: 7.7,
+        words: speak('Quick vacuum before the sun hits the floor', 5.3, 7.7),
       },
       {
         id: 'ol-3',
-        start: 15.5,
-        end: 20.5,
-        words: speak('The light in here at this hour is unreal', 15.5, 20.5),
+        start: 8.5,
+        end: 11.5,
+        words: speak('Hair up means we are actually doing this', 8.5, 11.5),
       },
       {
         id: 'ol-4',
-        start: 22,
+        start: 12.5,
+        end: 17.5,
+        words: speak('Okay so here is the plan for the whole morning', 12.5, 17.5),
+      },
+      {
+        id: 'ol-5',
+        start: 18.2,
+        end: 20.3,
+        words: speak('Lemon, ice, Maison Perrier', 18.2, 20.3),
+      },
+      {
+        id: 'ol-6',
+        start: 21.5,
         end: 31,
-        words: speak('Bed made, laundry going, and it is not even nine', 22, 31),
+        words: speak('And now I finally get to sit down and tell you everything', 21.5, 31),
       },
     ],
     interactions: [
-      { id: 'ol-i1', emoji: '🙂', label: ':slightly-smiling', start: 2, end: 4, triggerId: 'ol-1' },
+      { id: 'ol-i1', emoji: '🙂', label: ':slightly-smiling', start: 1.5, end: 3.5, triggerId: 'ol-1' },
       // She points at the bottle — the gesture serving the product beat.
-      { id: 'ol-i2', emoji: '👉', label: ':point-right', start: 8.5, end: 10.5, triggerId: 'ol-2' },
-      { id: 'ol-i3', emoji: '🤩', label: ':star-struck', start: 17, end: 19, triggerId: 'ol-3' },
+      { id: 'ol-i2', emoji: '👉', label: ':point-right', start: 18.4, end: 20.2, triggerId: 'ol-5' },
+      { id: 'ol-i3', emoji: '🤩', label: ':star-struck', start: 22.5, end: 24.5, triggerId: 'ol-6' },
     ],
   },
   {
@@ -417,19 +547,19 @@ export const AVATAR_ROWS: AvatarRow[] = [
     color: 'pink',
     offCamera: true,
     scripts: [
-      { id: 'bl-0', start: 12.5, end: 13.5, label: 'mmm' },
+      { id: 'bl-0', start: 10, end: 11, label: 'mmm' },
       {
         id: 'bl-1',
-        start: 24,
-        end: 27.5,
-        words: speak('You missed a corner', 24, 27.5),
+        start: 25.5,
+        end: 28.5,
+        words: speak('Wait, tell them the best part', 25.5, 28.5),
       },
     ],
     interactions: [
       // Blake reacts while Olivia is the one talking — the relationship the
       // connector lines exist to record.
-      { id: 'bl-i1', emoji: '👀', label: ':eyes', start: 9, end: 11, triggerId: 'ol-2' },
-      { id: 'bl-i2', emoji: '😂', label: ':joy', start: 25, end: 27, triggerId: 'ol-4' },
+      { id: 'bl-i1', emoji: '👀', label: ':eyes', start: 18.6, end: 20.4, triggerId: 'ol-5' },
+      { id: 'bl-i2', emoji: '😂', label: ':joy', start: 22, end: 24, triggerId: 'ol-6' },
     ],
   },
 ];

@@ -1,27 +1,34 @@
-import { Eye, PencilSimple, Trash, X } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
+import { CaretDown, PencilSimple, Trash, X } from '@phosphor-icons/react';
+import { AttentionEye, MarkGlyph } from '../../../assets/icons';
 import { IconButton } from '../../../ui/IconButton';
-import { formatClock, subjectsAt } from '../data';
+import { subjectsAt } from '../data';
 import type { AttentionKind, AttentionRun } from '../data';
+import { TimeField } from './PanelFields';
 
-const KINDS: { id: AttentionKind; glyph: string; label: string; hint: string }[] = [
-  { id: 'object', glyph: '●', label: 'Object', hint: 'a subject from the frame' },
-  { id: 'area', glyph: '✼', label: 'Area', hint: 'a region you draw on the frame' },
-  { id: 'none', glyph: '○', label: 'None', hint: 'no preference — the line greys' },
+const KINDS: { id: AttentionKind; label: string; hint: string }[] = [
+  { id: 'object', label: 'Object', hint: 'a subject from the frame' },
+  { id: 'area', label: 'Area', hint: 'a region you draw on the frame' },
+  { id: 'none', label: 'None', hint: 'no preference — the line greys' },
 ];
 
 /**
  * Inspector for one attention mark and the run it starts.
  *
- * Picking a KIND is only half the choice, so each kind opens its own second
- * step: OBJECT lists what is actually on screen at that moment (hovering a row
- * lights its box on the canvas; clicking a box on the canvas picks it here —
- * same choice, two surfaces), and AREA hands you the stage itself: a draw mode
- * where everything outside your drag frosts over, because the region you keep
- * clear is the thing being pointed at.
+ * The kind row breathes: a fresh mark opens with all three kinds laid out as
+ * chips, and picking one collapses the row to a compact kind-dropdown beside
+ * that kind's target control — clicking the dropdown unfolds the chips again.
+ * One row, two postures; the dropdown IS the collapsed chips.
+ *
+ * Picking OBJECT opens a list of what is actually on screen at that moment
+ * (hovering a row lights its box on the canvas; clicking a box on the canvas
+ * picks it here — same choice, two surfaces). Picking AREA hands you the
+ * stage itself: a draw mode where everything outside your drag frosts over.
  */
 export function AttentionPanel({
   run,
   pinned,
+  fresh = false,
   drawing,
   onClose,
   onSetKind,
@@ -29,11 +36,15 @@ export function AttentionPanel({
   onPeekSubject,
   onSetArea,
   onRedrawArea,
+  onRetimeStart,
+  onRetimeEnd,
   onRemove,
 }: {
   run: AttentionRun;
   /** The origin mark — retargetable, never deletable. */
   pinned: boolean;
+  /** Just dropped on the line: open with the kind chips unfolded. */
+  fresh?: boolean;
   /** True while the stage's area draw mode is armed for this mark. */
   drawing: boolean;
   onClose: () => void;
@@ -42,141 +53,213 @@ export function AttentionPanel({
   onPeekSubject: (subjectId: string | null) => void;
   onSetArea: (label: string) => void;
   onRedrawArea: () => void;
+  /** Move this mark (the run's start). Absent when the mark is pinned. */
+  onRetimeStart?: (seconds: number) => void;
+  /** Move the NEXT mark (this run's end). Absent on the last run. */
+  onRetimeEnd?: (seconds: number) => void;
   onRemove: () => void;
 }) {
   const { mark } = run;
   // Legal object targets: what is actually on screen when this state begins.
   const present = subjectsAt(mark.t);
+  const subject = present.find((s) => s.id === mark.subjectId);
+
+  /** Kind row posture. Fresh marks open unfolded; the caller keys this panel
+   *  by mark id, so each mark gets its own posture. */
+  const [unfolded, setUnfolded] = useState(fresh);
+  /** A fresh mark inherits its kind from the previous one, but that is an
+   *  accident of contiguity, not an answer — so the segmented control shows
+   *  NO selection until the user commits one. */
+  const [virgin, setVirgin] = useState(fresh);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  const pickKind = (kind: AttentionKind) => {
+    setUnfolded(false);
+    setVirgin(false);
+    onSetKind(kind);
+    // The second half of the choice comes to you: picking Object offers the
+    // targets; picking Area arms the stage (the host handles that side).
+    setPickerOpen(kind === 'object');
+  };
+
+  /* The subject list floats over whatever is below the panel — close it on any
+     press outside, and on Escape. */
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+        onPeekSubject(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPickerOpen(false);
+        onPeekSubject(null);
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pickerOpen, onPeekSubject]);
 
   return (
     <aside className="prop-panel prop-panel--attn" aria-label="Attention">
       <header className="prop-panel__header">
         <span className="prop-panel__title">
-          <Eye size={16} weight="bold" /> Attention
+          <AttentionEye size={20} /> Attention
         </span>
-        <IconButton size={32} variant="ghost" aria-label="Close" onClick={onClose}>
+        <IconButton size={32} variant="ghost" className="prop-panel__hbtn" aria-label="Close" onClick={onClose}>
           <X size={16} />
         </IconButton>
       </header>
 
-      {/* WHAT KIND of target. One glyph per state, same symbols as the line. */}
-      <div className="prop-panel__section">
-        <span className="prop-panel__label">The eye is on</span>
-        <div className="prop-panel__kinds">
-          {KINDS.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              className="prop-panel__kind"
-              data-picked={mark.kind === k.id || undefined}
-              aria-pressed={mark.kind === k.id}
-              title={k.hint}
-              onClick={() => onSetKind(k.id)}
-            >
-              <span className="prop-panel__kind-glyph" data-kind={k.id}>
-                {k.glyph}
-              </span>
-              {k.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* WHICH target — the second half of the choice. */}
-      {mark.kind === 'object' && (
-        <div className="prop-panel__section" onMouseLeave={() => onPeekSubject(null)}>
-          <span className="prop-panel__label">Subject — on screen at {formatClock(mark.t)}</span>
-          <div className="prop-panel__objects">
-            {present.map((s) => (
+      {/* WHERE the eye goes — "Position". Unfolded: one segmented control
+          asking the question. Collapsed: the picked kind as a dropdown,
+          beside that kind's target control. */}
+      <div className="prop-panel__section attn-kindrow">
+        <span className="prop-panel__label">Position</span>
+        {unfolded ? (
+          <div className="attn-seg" key="segments" role="radiogroup" aria-label="Position">
+            {KINDS.map((k) => (
               <button
-                key={s.id}
+                key={k.id}
                 type="button"
-                className="prop-panel__object"
-                data-picked={s.id === mark.subjectId || undefined}
-                aria-pressed={s.id === mark.subjectId}
-                onMouseEnter={() => onPeekSubject(s.id)}
-                onClick={() => onSetSubject(s.id)}
+                className="attn-seg__opt"
+                role="radio"
+                aria-checked={!virgin && mark.kind === k.id}
+                data-picked={(!virgin && mark.kind === k.id) || undefined}
+                title={k.hint}
+                onClick={() => pickKind(k.id)}
               >
-                <span className="prop-panel__object-label">{s.label}</span>
-                <span className="prop-panel__object-kind">{s.kind}</span>
+                <span className="attn-seg__box">
+                  <span className="attn-glyph">
+                    <MarkGlyph kind={k.id} />
+                  </span>
+                </span>
+                <span className="attn-seg__caption">{k.label}</span>
               </button>
             ))}
           </div>
-          <p className="prop-panel__note">Or click a box on the video — same choice.</p>
-        </div>
-      )}
+        ) : (
+          <div className="attn-row" key="collapsed">
+            <button
+              type="button"
+              className="attn-select"
+              aria-label="Change what the eye is on"
+              title="Change what the eye is on"
+              onClick={() => {
+                setPickerOpen(false);
+                setUnfolded(true);
+              }}
+            >
+              <span className="attn-select__value">
+                <span className="attn-glyph">
+                  <MarkGlyph kind={mark.kind} />
+                </span>
+                {KINDS.find((k) => k.id === mark.kind)?.label}
+              </span>
+              <CaretDown size={16} className="attn-select__caret" />
+            </button>
 
-      {mark.kind === 'area' && (
-        <div className="prop-panel__section">
-          {drawing ? (
-            <p className="prop-panel__note prop-panel__note--live">
-              Draw on the video: drag from the centre of the area outward. Everything outside
-              stays frosted. Esc cancels.
-            </p>
-          ) : mark.area ? (
-            <>
-              <div className="prop-panel__field">
-                <span className="prop-panel__label">Area</span>
-                <div className="prop-panel__arearow">
+            {mark.kind === 'object' && (
+              <div className="attn-select-wrap" ref={pickerRef}>
+                <button
+                  type="button"
+                  className="attn-select"
+                  aria-expanded={pickerOpen}
+                  onClick={() => setPickerOpen((v) => !v)}
+                >
+                  <span className="attn-select__value" data-placeholder={!subject || undefined}>
+                    {subject?.label ?? 'Select object'}
+                  </span>
+                  <CaretDown size={16} className="attn-select__caret" />
+                </button>
+                {pickerOpen && (
+                  <div className="attn-menu" role="listbox" aria-label="Objects on screen" onMouseLeave={() => onPeekSubject(null)}>
+                    {present.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        role="option"
+                        className="attn-menu__item"
+                        aria-selected={s.id === mark.subjectId}
+                        data-picked={s.id === mark.subjectId || undefined}
+                        onMouseEnter={() => onPeekSubject(s.id)}
+                        onClick={() => {
+                          onSetSubject(s.id);
+                          setPickerOpen(false);
+                          onPeekSubject(null);
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mark.kind === 'area' &&
+              (drawing ? (
+                <span className="attn-select attn-select--live">Draw on video…</span>
+              ) : mark.area ? (
+                <span className="attn-field">
                   <input
-                    className="prop-panel__input"
+                    className="attn-field__input"
                     type="text"
                     value={mark.areaLabel ?? ''}
                     aria-label="Area label"
                     onChange={(e) => onSetArea(e.target.value)}
                   />
-                  <IconButton size={32} variant="ghost" aria-label="Redraw the area" onClick={onRedrawArea}>
-                    <PencilSimple size={16} />
+                  <IconButton size={24} variant="ghost" aria-label="Redraw the area" title="Redraw the area" onClick={onRedrawArea}>
+                    <PencilSimple size={14} />
                   </IconButton>
-                </div>
-              </div>
-              <p className="prop-panel__note">
-                A soft region of the frame — the eye stays here, no detection needed. Redraw with
-                the pencil.
-              </p>
-            </>
-          ) : (
-            <button className="prop-panel__add" type="button" onClick={onRedrawArea}>
-              Draw the area on the video
-            </button>
-          )}
-        </div>
-      )}
-
-      {mark.kind === 'none' && (
-        <div className="prop-panel__section">
-          <p className="prop-panel__note">
-            No preference from here — the eye goes wherever the frame sends it, and the line greys
-            until the next mark.
-          </p>
-        </div>
-      )}
-
-      {/* WHEN it holds. Both edges belong to marks; drag them on the line. */}
-      <div className="prop-panel__section">
-        <div className="prop-panel__fields">
-          <div className="prop-panel__field">
-            <span className="prop-panel__label">From</span>
-            <span className="prop-panel__readout">{formatClock(run.start)}</span>
+                </span>
+              ) : (
+                <button type="button" className="attn-select" onClick={onRedrawArea}>
+                  <span className="attn-select__value" data-placeholder>
+                    Select area
+                  </span>
+                </button>
+              ))}
           </div>
-          <div className="prop-panel__field">
-            <span className="prop-panel__label">Until</span>
-            <span className="prop-panel__readout">{formatClock(run.end)}</span>
-          </div>
-        </div>
-        <p className="prop-panel__note">Drag the glyphs on the line to move the boundaries.</p>
-      </div>
-
-      <div className="prop-panel__section prop-panel__section--actions">
-        <span className="prop-panel__note">
-          {pinned ? 'The opening mark can be retargeted but not removed.' : 'Remove this mark — the previous state extends.'}
-        </span>
-        {!pinned && (
-          <IconButton size={32} variant="ghost" aria-label="Delete this mark" onClick={onRemove}>
-            <Trash size={16} />
-          </IconButton>
         )}
       </div>
+
+      {/* WHEN it holds. The start is this mark; the end belongs to the next
+          one, so editing it moves that mark — same rule as dragging glyphs. */}
+      <div className="prop-panel__section">
+        <div className="prop-panel__fields">
+          <TimeField
+            label="Start time"
+            value={run.start}
+            disabled={!onRetimeStart}
+            onCommit={(sec) => onRetimeStart?.(sec)}
+          />
+          <TimeField
+            label="End time"
+            value={run.end}
+            disabled={!onRetimeEnd}
+            onCommit={(sec) => onRetimeEnd?.(sec)}
+          />
+        </div>
+      </div>
+
+      {/* Delete lives at the bottom, full width — the origin mark can be
+          retargeted but never removed, so it gets no delete row at all. */}
+      {!pinned && (
+        <div className="prop-panel__section">
+          <button type="button" className="attn-delete" onClick={onRemove}>
+            <Trash size={16} />
+            Delete
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

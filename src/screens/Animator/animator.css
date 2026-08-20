@@ -195,7 +195,9 @@
    play / zoom controls floating just outside the video frame. */
 .anim-canvas {
   position: relative;
-  z-index: 1; /* keep the floating inspector above the timeline below it */
+  /* Above EVERYTHING in the timeline (its rail/playhead run z5–7), so a tall
+     floating inspector never has track chrome shining through it. */
+  z-index: 8;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -272,25 +274,40 @@
    strip, and the current segment's index at the right edge. */
 /* With the strip, the play pill is a fixture of the band (Figma 673-130315),
    not a hover reveal. Doubled class outranks timeline.css's hover-hide, which
-   loads after this sheet. */
+   loads after this sheet.
+
+   Play pill, thumbs and index chip share one MATERIAL (dark glass) and one
+   centerline (the thumb row's, 40.5px up), so the whole band reads as a
+   single control instead of three strays on the picture. */
 .anim-preview.anim-preview--strip .anim-play {
-  left: 19px;
+  left: 20px;
+  bottom: 24px;
+  width: 33px;
+  height: 33px;
   z-index: 4;
   opacity: 1;
+  background: rgba(10, 11, 11, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: none;
 }
+.anim-preview.anim-preview--strip .anim-play:hover { background: rgba(10, 11, 11, 0.65); }
+/* A scrim, not an eraser: it darkens the PICTURE for control legibility and
+   fades to transparent black — never to the page background, which dissolved
+   the frame's bottom edge and corners into the page. */
 .anim-strip-shade {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   height: 61px;
-  background: linear-gradient(to bottom, rgba(20, 21, 21, 0), var(--color-bg-primary));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55));
   z-index: 2;
   pointer-events: none;
 }
 .anim-strip {
   position: absolute;
-  left: 72px;
+  left: 63px;
   bottom: 26px;
   display: flex;
   align-items: center;
@@ -357,18 +374,27 @@
   border-radius: 50%;
   background: var(--color-primary);
 }
+/* The segment readout: a quiet glass chip on the band's centerline — same
+   material as the play pill. The current number is the only bright thing. */
 .anim-strip__index {
   position: absolute;
-  right: 24px;
-  bottom: 29px;
+  right: 20px;
+  bottom: 30px;
   z-index: 3;
-  font-size: 18px;
-  line-height: 24px;
-  letter-spacing: 0.01em;
+  padding: 3px 10px 4px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: rgba(10, 11, 11, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.55);
   pointer-events: none;
 }
+.anim-strip__index-now { color: #fff; font-weight: 500; }
 
 /* Zoom controls pinned to the bottom-right corner, outside the video frame. */
 .anim-zoom {
@@ -1151,9 +1177,9 @@ button.anim-header__crumb:hover {
 .anim-avatar-row--ghost .anim-avatar-toggle { opacity: 1; }
 
 /* --- On-canvas component HUD -------------------------------------------------
-   Detected primitives (avatars, props, lights) surface as boxes when the
-   player is hovered; the layer shares the preview's framing transform so the
-   boxes track their subjects across camera presets. */
+   The layer shares the preview's framing transform so the boxes track their
+   subjects across camera presets. All box/tag styling lives in timeline.css,
+   matched to the design. */
 .anim-hud {
   position: absolute;
   inset: 0;
@@ -1162,122 +1188,9 @@ button.anim-header__crumb:hover {
 .anim-hud__box {
   position: absolute;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.02);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   pointer-events: auto;
-  opacity: 0;
-  transition: opacity 0.18s ease, border-color 0.15s ease, background 0.15s ease;
-}
-.anim-preview:hover .anim-hud__box,
-.anim-preview--hud-open .anim-hud__box { opacity: 1; }
-.anim-hud__box:hover,
-.anim-hud__box[data-open] {
-  border-color: var(--color-primary);
-  background: rgba(0, 208, 255, 0.08);
-}
-.anim-hud__box[data-kind='light'] { border-style: dashed; }
-.anim-hud__tag {
-  position: absolute;
-  top: -9px;
-  left: 6px;
-  padding: 1px var(--space-6);
-  border-radius: 4px;
-  background: rgba(20, 21, 21, 0.85);
-  backdrop-filter: blur(4px);
-  border: 0.5px solid var(--color-hairline);
-  color: var(--color-text-primary);
-  font-family: var(--font-brand);
-  font-size: var(--fs-11);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 16px;
-  white-space: nowrap;
-}
-.anim-hud__box:hover .anim-hud__tag,
-.anim-hud__box[data-open] .anim-hud__tag {
-  background: var(--color-primary);
-  border-color: transparent;
-  color: var(--color-text-on-primary);
-}
-
-/* The edit popover a clicked primitive opens, anchored beside its box. */
-.anim-hud-popover {
-  position: absolute;
-  z-index: 3;
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-10);
-  background: rgba(29, 31, 32, 0.92);
-  backdrop-filter: blur(12px);
-  border: 0.5px solid var(--color-hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  cursor: default;
-  animation: anim-popover-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes anim-popover-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.97); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .anim-hud-popover { animation: none; }
-}
-.anim-hud-popover__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding-bottom: var(--space-4);
-}
-.anim-hud-popover__title {
-  font-size: var(--fs-13);
-  font-weight: 500;
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-primary);
-  flex: 0 0 auto;
-}
-.anim-hud-popover__kind {
-  padding: 0 var(--space-6);
-  border-radius: 4px;
-  font-size: var(--fs-11);
-  line-height: 16px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-text-secondary);
-}
-.anim-hud-popover__kind[data-kind='avatar'] { background: var(--color-caption-purple); color: #cfc4ff; }
-.anim-hud-popover__kind[data-kind='light'] { background: rgba(0, 208, 255, 0.18); color: var(--color-primary); }
-.anim-hud-popover__head .icon-btn { margin-left: auto; }
-.anim-hud-popover__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8);
-  padding: var(--space-6) var(--space-8);
-  border: 0.5px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
-  cursor: pointer;
-  font-family: var(--font-brand);
-  text-align: left;
-}
-.anim-hud-popover__row:hover { background: rgba(255, 255, 255, 0.12); }
-.anim-hud-popover__label {
-  font-size: var(--fs-12);
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-secondary);
-}
-.anim-hud-popover__value {
-  font-size: var(--fs-12);
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: opacity 0.15s ease;
 }
 
 /* --- Chromeless embed: the workspace alone, no window frame or header -------

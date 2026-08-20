@@ -11,9 +11,7 @@ import {
   autoAreaName,
   clipText,
   marksToRuns,
-  presetLabel,
   speak,
-  subjectById,
   subjectsAt,
 } from './data';
 import type {
@@ -24,7 +22,6 @@ import type {
   Interaction,
   ScriptClip,
   Shot,
-  ShotPreset,
 } from './data';
 
 /**
@@ -109,17 +106,16 @@ export function useSceneEditing(duration = SCENE_DURATION) {
   const addMark = useCallback(
     (t: number): string | null => {
       const at = Math.min(Math.max(0, t), duration - MIN_MARK_GAP);
-      let id: string | null = null;
-      setMarks((cur) => {
-        // Too close to an existing mark → treat as a miss, not a new state.
-        if (cur.some((m) => Math.abs(m.t - at) < MIN_MARK_GAP)) return cur;
-        const inherit = attentionAt(cur, at);
-        id = `m-${Math.round(at * 1000)}`;
-        return [...cur, { ...inherit, id, t: at }];
-      });
+      // Too close to an existing mark → treat as a miss, not a new state.
+      // (Decided against the current marks HERE, not inside the updater —
+      // React may defer updaters, and callers need the id synchronously.)
+      if (marks.some((m) => Math.abs(m.t - at) < MIN_MARK_GAP)) return null;
+      const inherit = attentionAt(marks, at);
+      const id = `m-${Math.round(at * 1000)}`;
+      setMarks((cur) => [...cur, { ...inherit, id, t: at }]);
       return id;
     },
-    [duration],
+    [duration, marks],
   );
 
   /** Slide a mark along the line, stopping short of its neighbours. The origin
@@ -206,35 +202,11 @@ export function useSceneEditing(duration = SCENE_DURATION) {
 
   /* --- Shots (framing) ------------------------------------------------------ */
 
-  const renameShot = useCallback((id: string, label: string) => {
-    const trimmed = label.trim();
-    if (!trimmed) return;
-    setShots((cur) => cur.map((s) => (s.id === id ? { ...s, label: trimmed } : s)));
-  }, []);
-
-  const setPreset = useCallback(
-    (id: string, preset: ShotPreset) =>
-      setShots((cur) =>
-        cur.map((s) =>
-          s.id === id
-            ? { ...s, preset, label: presetLabel(preset, subjectById(s.subjectId).label) }
-            : s,
-        ),
-      ),
-    [],
-  );
-
-  /** Re-pointing a shot re-tags the clip AND re-crops the stage, because the
-   *  framing transform is derived from the subject's box. */
-  const setShotSubject = useCallback(
-    (id: string, subjectId: string) =>
-      setShots((cur) =>
-        cur.map((s) =>
-          s.id === id
-            ? { ...s, subjectId, label: presetLabel(s.preset, subjectById(subjectId).label) }
-            : s,
-        ),
-      ),
+  /** Edit any of a camera state's properties. The clip's name and the stage's
+   *  crop are both DERIVED from these fields, so one patch moves everything. */
+  const patchShot = useCallback(
+    (id: string, patch: Partial<Pick<Shot, 'rig' | 'preset' | 'anchor' | 'stability' | 'subjectId'>>) =>
+      setShots((cur) => cur.map((s) => (s.id === id ? { ...s, ...patch } : s))),
     [],
   );
 
@@ -348,6 +320,22 @@ export function useSceneEditing(duration = SCENE_DURATION) {
       }));
     },
     [patchRow, rowOfScript],
+  );
+
+  /** Remove a line. Reactions it triggered stay on their lanes but stand
+   *  alone — their connectors simply disappear with the parent. */
+  const removeScript = useCallback(
+    (id: string) =>
+      setRows((cur) =>
+        cur.map((r) => ({
+          ...r,
+          scripts: r.scripts.filter((c) => c.id !== id),
+          interactions: r.interactions.map((i) =>
+            i.triggerId === id ? { ...i, triggerId: undefined } : i,
+          ),
+        })),
+      ),
+    [],
   );
 
   /* --- Interactions ----------------------------------------------------------- */
@@ -471,9 +459,7 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     setMarkAreaRegion,
     removeMark,
     // shots
-    renameShot,
-    setPreset,
-    setShotSubject,
+    patchShot,
     rollShot,
     splitShot,
     removeShot,
@@ -481,6 +467,7 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     retimeScript,
     moveScript,
     editScript,
+    removeScript,
     // interactions
     retimeInteraction,
     moveInteraction,

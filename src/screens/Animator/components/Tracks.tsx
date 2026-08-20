@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Eye, VideoCamera } from '@phosphor-icons/react';
-import { CLIP_H, LANE_H, laneTop, markLabel } from '../data';
+import { CLIP_H, LANE_H, cameraStateName, laneTop, markLabel } from '../data';
 import type {
   AttentionRun,
   AvatarRow,
@@ -109,6 +109,7 @@ function AttentionLane({
   trackOn,
   onToggleTrack,
   onSelect,
+  onCreate,
   scene,
 }: {
   runs: AttentionRun[];
@@ -119,6 +120,8 @@ function AttentionLane({
   trackOn: boolean;
   onToggleTrack: () => void;
   onSelect: (markId: string) => void;
+  /** Reports a freshly double-clicked mark; falls back to plain selection. */
+  onCreate?: (markId: string) => void;
   scene: SceneEditing;
 }) {
   /** Pointer x inside the band → seconds. */
@@ -129,6 +132,18 @@ function AttentionLane({
 
   return (
     <div className="anim-attn" style={{ height: LANE_H }}>
+      {/* Whole-track selection is built exactly like every other selected
+          clip: ONE white frame element — caps, ring and all are its single
+          background, so nothing can disconnect — with the amber band inset
+          inside it. The grips are its pseudo-elements. Inert: the take's
+          bounds are fixed by the footage. */}
+      {trackOn && (
+        <div
+          className="anim-attn__frame"
+          style={{ left: pad - 18, width: duration * pxPerSec + 36 }}
+          aria-hidden
+        />
+      )}
       {/* The band spans the whole take — attention always has a state. */}
       <div
         className="anim-attn__band"
@@ -136,7 +151,7 @@ function AttentionLane({
         style={{ left: pad, width: duration * pxPerSec }}
         onDoubleClick={(e) => {
           const id = scene.addMark(timeAt(e));
-          if (id) onSelect(id);
+          if (id) (onCreate ?? onSelect)(id);
         }}
         onClick={(e) => {
           // The amber background itself selects the whole track — the runs and
@@ -145,16 +160,6 @@ function AttentionLane({
           if (e.target === e.currentTarget) onToggleTrack();
         }}
       >
-        {/* Whole-track selection wears the same end caps as a selected clip.
-            They are inert — the take's bounds are fixed by the footage — but
-            they make "the whole track is selected" read in the shared
-            selection language. */}
-        {trackOn && (
-          <>
-            <span className="anim-attn__cap anim-attn__cap--start" aria-hidden />
-            <span className="anim-attn__cap anim-attn__cap--end" aria-hidden />
-          </>
-        )}
         {runs.map((run) => {
           const selected = selection?.kind === 'attention' && selection.id === run.mark.id;
           return (
@@ -231,13 +236,13 @@ function ShotClip({
       style={{ left: pad + shot.start * pxPerSec, width: (shot.end - shot.start) * pxPerSec }}
       onClick={() => onSelect()}
       onDoubleClick={() => scene.splitShot(shot.id, (shot.start + shot.end) / 2)}
-      title={`${shot.label} · double-click to split`}
+      title={`${cameraStateName(shot)} · double-click to split`}
     >
       {selected && (
         <Handle edge="start" place="in" locked={!hasPrev} drag={drag.dragProps('start', shot.start)} />
       )}
       <span className="anim-clip__body">
-        <span className="anim-clip__label">{shot.label}</span>
+        <span className="anim-clip__label">{cameraStateName(shot)}</span>
       </span>
       {selected && (
         <Handle edge="end" place="in" locked={!hasNext} drag={drag.dragProps('end', shot.end)} />
@@ -462,6 +467,7 @@ export function Tracks({
   scene,
   selection,
   onSelectClip,
+  onCreateMark,
   attnTrackOn,
   onToggleAttnTrack,
   time,
@@ -473,6 +479,9 @@ export function Tracks({
   scene: SceneEditing;
   selection: TimelineSelection | null;
   onSelectClip: (kind: TimelineSelection['kind'], id: string) => void;
+  /** A mark was just double-clicked into the line — the host may want to open
+   *  its inspector in the fresh (kind chips unfolded) posture. */
+  onCreateMark?: (id: string) => void;
   /** Whole-track selection: keeps the stage's attention overlays live through
    *  playback without selecting runs one by one. */
   attnTrackOn: boolean;
@@ -528,6 +537,7 @@ export function Tracks({
               trackOn={attnTrackOn}
               onToggleTrack={onToggleAttnTrack}
               onSelect={(id) => onSelectClip('attention', id)}
+              onCreate={onCreateMark}
               scene={scene}
             />
           </div>

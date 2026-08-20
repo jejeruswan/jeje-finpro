@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animator } from '../Animator/Animator';
+import { SCENE_DURATION, TAKE_CUTS } from '../Animator/data';
 import { Corkboard } from './components/Corkboard';
 import { EditorHeader } from './components/EditorHeader';
 import { HomePrompt } from './components/HomePrompt';
@@ -14,7 +15,7 @@ import {
 } from './data';
 import { useMaterialization } from './useMaterialization';
 import { useZoomGesture, type ZoomFocus } from './useZoomGesture';
-import { MORPH_MS, flightIn, flightOut, grabVideoFrame, type RectMap } from './levelFlight';
+import { EASE, MORPH_MS, flightIn, flightOut, grabVideoFrame, type RectMap } from './levelFlight';
 import './mirage.css';
 
 /* ----------------------------------------------------------------------------
@@ -54,6 +55,10 @@ export function Mirage() {
   const [level, setLevel] = useState<Level>(1);
   const [lastDir, setLastDir] = useState<Dir>('in');
   const [travelCount, setTravelCount] = useState(0);
+  /** The outgoing level, kept mounted (same keyed subtree — no remount) for
+   *  the flight's duration so the camera pulls away from it instead of
+   *  hard-cutting to black. Cleared when the flight resolves. */
+  const [ghost, setGhost] = useState<{ level: Level; count: number } | null>(null);
   const [sceneId, setSceneId] = useState(SCENES[0].id);
   const [scenes, setScenes] = useState<Scene[]>(SCENES);
   const [hint, setHint] = useState(0);
@@ -65,6 +70,7 @@ export function Mirage() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const levelRef = useRef<Level>(level);
   levelRef.current = level;
+  const travelCountRef = useRef(0);
   const lock = useRef(0);
   const cardEls = useRef<Record<string, HTMLDivElement | null>>({});
   const hoverCard = useRef<string | null>(null);
@@ -157,7 +163,11 @@ export function Mirage() {
         if (morphArgs.current) stageEl.dataset.morph = dir;
       }
 
-      setTravelCount((n) => n + 1);
+      // The outgoing level stays mounted as the ghost the camera leaves
+      // behind — its key carries over so the live subtree survives the swap.
+      setGhost(morphArgs.current ? { level: levelRef.current, count: travelCountRef.current } : null);
+      travelCountRef.current += 1;
+      setTravelCount(travelCountRef.current);
       setLevel(next);
     },
     [setFocus],
@@ -170,9 +180,15 @@ export function Mirage() {
     if (!args) return;
     morphArgs.current = null;
 
+    let revealT = 0;
     const finish = (overlay: HTMLElement | null) => {
       const stageEl = stageRef.current;
-      if (stageEl) delete stageEl.dataset.morph;
+      window.clearTimeout(revealT);
+      setGhost(null);
+      if (stageEl) {
+        delete stageEl.dataset.morph;
+        stageEl.classList.remove('mir-stage--reveal');
+      }
       if (overlay) {
         overlay
           .animate([{ opacity: 1 }, { opacity: 0 }], {
@@ -191,6 +207,38 @@ export function Mirage() {
         const stageEl = stageRef.current;
         const order = scenesRef.current.map((s) => ({ id: s.id, thumb: s.thumb }));
         if (!stageEl) return finish(null);
+
+        /* The camera move under the clone flight: the outgoing ghost recedes
+           past the lens (in) or falls away (out) while the incoming level
+           arrives at the same pivot — launched HERE, after the landing rects
+           are measured, so the measurements are never taken mid-transform. */
+        const flyCamera = () => {
+          const ghostEl = stageEl.querySelector<HTMLElement>('.mir-level--ghost');
+          const liveEl = stageEl.querySelector<HTMLElement>('.mir-level:not(.mir-level--ghost)');
+          ghostEl?.animate(
+            [
+              { transform: 'scale(1)', opacity: 1 },
+              { opacity: 0, offset: 0.5 },
+              { transform: `scale(${args.dir === 'in' ? 1.12 : 0.92})`, opacity: 0 },
+            ],
+            { duration: MORPH_MS, easing: EASE, fill: 'forwards' },
+          );
+          liveEl?.animate(
+            [
+              { transform: `scale(${args.dir === 'in' ? 0.955 : 1.06})`, opacity: 0 },
+              { opacity: 1, offset: 0.35 },
+              { transform: 'scale(1)', opacity: 1 },
+            ],
+            { duration: MORPH_MS, easing: EASE, fill: 'none' },
+          );
+          // Supporting chrome (tools, timeline) starts rising while the
+          // clones are still landing — overlap, not a sequel.
+          revealT = window.setTimeout(
+            () => stageEl.classList.add('mir-stage--reveal'),
+            MORPH_MS * 0.55,
+          );
+        };
+
         try {
           if (args.dir === 'in') {
             const preview = stageEl.querySelector('.anim-preview');
@@ -201,15 +249,21 @@ export function Mirage() {
               slotRadius = getComputedStyle(el).borderRadius || slotRadius;
             });
             if (!(preview instanceof HTMLElement) || slots.size === 0) return finish(null);
+            // Take EVERY landing measurement before the camera starts — a
+            // just-launched WAAPI scale already skews getBoundingClientRect,
+            // and a hero flown to a mid-scale rect lands visibly short.
+            const previewRect = preview.getBoundingClientRect();
+            const previewRadius = getComputedStyle(preview).borderRadius || '16px';
+            flyCamera();
             const overlay = await flightIn({
               order,
               selectedId: args.selectedId,
               sources: args.sources,
-              preview: preview.getBoundingClientRect(),
+              preview: previewRect,
               slots,
               radii: {
                 card: args.cardRadius,
-                preview: getComputedStyle(preview).borderRadius || '16px',
+                preview: previewRadius,
                 slot: slotRadius,
               },
             });
@@ -226,6 +280,7 @@ export function Mirage() {
                 cardRadius = getComputedStyle(thumb).borderRadius || cardRadius;
               }
             }
+            flyCamera();
             const overlay = await flightOut({
               order,
               selectedId: args.selectedId,
@@ -332,6 +387,18 @@ export function Mirage() {
     if (opts?.recook) mat.recook(id);
   };
 
+  const deleteScene = (id: string) => {
+    setScenes((list) => {
+      const next = list.filter((s) => s.id !== id).map((s, i) => ({ ...s, num: i + 1 }));
+      // The zoom target must always exist — fall back to the first scene.
+      if (sceneIdRef.current === id && next.length > 0) {
+        sceneIdRef.current = next[0].id;
+        setSceneId(next[0].id);
+      }
+      return next;
+    });
+  };
+
   const reorderScene = (id: string, beforeId: string | null) => {
     setScenes((list) => {
       const moving = list.find((s) => s.id === id);
@@ -392,9 +459,25 @@ export function Mirage() {
           chromeless
           chatOpen={chatOpen}
           onToggleChat={() => setChatOpen((v) => !v)}
+          /* Open the take ON the entered scene's segment, not at 0:00. The
+             take's segments are different lengths, so the fraction comes from
+             the actual cut times, not from the scene's index. */
+          initialProgress={
+            (TAKE_CUTS[Math.max(0, scenes.findIndex((s) => s.id === sceneId))] ?? 0) /
+            SCENE_DURATION
+          }
           strip={{
             scenes: scenes.map((s) => ({ id: s.id, thumb: s.thumb })),
-            onExit: () => zoomOut(),
+            /* Exit lands on the double-clicked scene: it becomes the selected
+               scene BEFORE travel captures its flight, so the reverse morph
+               shrinks into that card and centers it under the crosshair. */
+            onExit: (id) => {
+              if (id) {
+                sceneIdRef.current = id;
+                setSceneId(id);
+              }
+              zoomOut();
+            },
           }}
           chatContent={
             <div className="mir-chatlog">
@@ -426,6 +509,7 @@ export function Mirage() {
                 onOpenScene={openScene}
                 onInsertScene={insertScene}
                 onEditScene={editScene}
+                onDeleteScene={deleteScene}
                 onReorderScene={reorderScene}
                 registerCard={(id, el) => {
                   cardEls.current[id] = el;
@@ -459,6 +543,14 @@ export function Mirage() {
             onToggleChat={() => setChatOpen((v) => !v)}
           />
           <div className="mir-stage" ref={stageRef}>
+            {/* The level we're leaving: same key as when it was current, so
+                the live subtree carries over untouched while the camera pulls
+                away from it. Removed when the flight resolves. */}
+            {ghost && (
+              <div key={`level-${ghost.level}-${ghost.count}`} className="mir-level mir-level--ghost">
+                {renderContent(ghost.level)}
+              </div>
+            )}
             <div
               key={`level-${level}-${travelCount}`}
               /* Level travel is the shared-element flight now — the old scale
