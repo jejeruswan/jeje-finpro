@@ -28,7 +28,11 @@ export const RAIL = 42;
    segment durations are its 12 scene lengths, read off the footage's actual
    cut points — every annotation below is written against those cuts. */
 
-export const SOURCE_VIDEO = '/assets/video.mp4';
+/* The take is 224MB — too large for git (GitHub's 100MB limit), so deployed
+   builds stream it from Vercel Blob instead: set VITE_VIDEO_URL in the Vercel
+   project's environment variables to the Blob file's public URL. Local dev
+   keeps reading the untracked file in public/assets. */
+export const SOURCE_VIDEO: string = import.meta.env.VITE_VIDEO_URL || '/assets/video.mp4';
 
 /** How long each scene actually holds the screen — the take's real cuts.
  *  The filmstrip scrubber maps its equal-width thumbs through these, so its

@@ -77,7 +77,7 @@ export function CameraStatePanel({
           <CaretDown size={16} className="attn-select__caret" />
         </button>
         {openMenu === id && (
-          <div className="attn-menu attn-menu--fit" role="listbox" aria-label={title}>
+          <div className="attn-menu" role="listbox" aria-label={title}>
             {options.map((o) => (
               <button
                 key={o.id}
