@@ -261,6 +261,10 @@ export function EditorCanvas({
               style={{ transform }}
               playsInline
               preload="metadata"
+              /* The level flight canvas-captures frames; when the take streams
+                 from Vercel Blob (cross-origin) the capture needs CORS opt-in
+                 or the canvas taints and the hero dissolve falls back. */
+              crossOrigin="anonymous"
             />
 
             {/* The object graph — only while the attention track is selected.

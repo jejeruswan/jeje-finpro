@@ -127,7 +127,7 @@ export function ScriptPanel({
                 Reaction
               </button>
               {castOpen && (
-                <div className="attn-menu attn-menu--fit" role="listbox" aria-label="Who reacts">
+                <div className="attn-menu" role="listbox" aria-label="Who reacts">
                   {rows.map((row) => (
                     <button
                       key={row.id}
