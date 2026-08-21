@@ -1,0 +1,1539 @@
+/* ============================================================================
+   Frame Canvas — the time-anchored timeline, the amber attention line, the
+   curved on-video scrubber and the stage overlays. Matched to the design frame
+   (jess-mirage · 659:122771).
+
+   Kept in its own file: the class names here are deliberately new so none of
+   the pixel-era rules in animator.css fight the geometry that is derived from
+   seconds.
+   ============================================================================ */
+.anim {
+  --anim-ruler-row: 24px;
+  /* The attention band, sampled from the design. */
+  --attn-band: #4e401e;
+  --attn-line: #ffdd33;
+  --attn-none: #6f6a58;
+}
+
+/* --- Canvas + stage ---------------------------------------------------------- */
+
+/* The utilities that replaced the tool pillar. */
+.anim-utils {
+  position: absolute;
+  top: var(--space-16);
+  left: var(--space-16);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* The design fixes the stage at ~631px wide; it only shrinks when space runs
+   out. Overrides the pixel-era 764px in animator.css. */
+.anim-canvas .anim-preview {
+  width: 631px;
+  aspect-ratio: 16 / 9;
+}
+
+.anim-preview__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+/* --- The one-second rerender: diffusion resolve ------------------------------
+   An edit marks the picture DIRTY: it EASES soft over the first beat (150ms,
+   matching BLUR_IN_MS in useRenderStatus), like a generation starting over,
+   then RESOLVES back to crisp across the rest of the render second. Drags
+   render once, on release — useRenderStatus holds the kick until pointer-up,
+   so the stage stays crisp while the hand is still working. */
+.anim-preview[data-render='dirty'] .anim-preview__video {
+  filter: blur(16px) saturate(0.6) brightness(0.85);
+  transition: filter 150ms ease-in;
+}
+.anim-preview[data-render='resolving'] .anim-preview__video {
+  filter: blur(0px) saturate(1) brightness(1);
+  transition: filter 850ms cubic-bezier(0.3, 0.6, 0.35, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-preview[data-render] .anim-preview__video { filter: none; transition: none; }
+}
+
+/* Play control, inside the frame per the design: solid surface circle with the
+   glyph truly centred, a drop shadow lifting it off the picture — and hidden
+   until the stage is hovered, like the scrubber. */
+.anim-preview .anim-play {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-gray-100);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.anim-preview:hover .anim-play,
+.anim-preview:focus-within .anim-play { opacity: 1; }
+.anim-preview .anim-play:hover { background: var(--color-surface-hover); }
+
+/* --- The curved whole-take scrubber ----------------------------------------- */
+
+.anim-wave {
+  position: absolute;
+  left: 72px; /* clear of the play control */
+  right: 20px;
+  bottom: 16px;
+  height: 48px;
+  z-index: 3;
+  cursor: ew-resize;
+  touch-action: none;
+  /* Hidden until the stage is hovered, like the play control. */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.anim-preview:hover .anim-wave,
+.anim-preview:focus-within .anim-wave,
+.anim-wave[data-scrubbing] { opacity: 1; }
+.anim-wave:focus-visible { outline: 1px solid var(--color-primary); outline-offset: 2px; }
+.anim-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* One uniform line, per the design, shadowed off the picture. */
+.anim-wave__path {
+  fill: none;
+  stroke: var(--color-primary-hover);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+/* Solid primary-cyan dot at the playhead, per the design. */
+.anim-wave__marker {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+/* --- HUD: the object graph on the stage (styles sampled from the design) -----
+   Boxes exist only while the attention track is selected, and even then each
+   one is invisible until hovered — hover shows the #A6ECFF outline and the
+   chip riding the top-left corner. The mark's current target (and a
+   list-hovered peek) stays visible, wearing the white corner handles. */
+.anim-hud__box {
+  opacity: 0;
+  border: 1px solid #a6ecff;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.anim-hud__box:hover,
+.anim-hud__box[data-target],
+.anim-hud__box[data-selected] { opacity: 1; }
+
+/* --- Area drawing on the stage (colours sampled from the design) ----------- */
+
+/* While dragging, the background dims and the marquee stays clear: the clear
+   rectangle is the thing being pointed at. The cutout is the marquee's own
+   giant shadow, so it is one paint. */
+.anim-dimlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+.anim-dimlayer--full { background: rgba(0, 0, 0, 0.5); }
+.anim-marquee {
+  position: absolute;
+  border: 1px solid rgba(214, 246, 255, 0.95);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+}
+
+/* The committed region: #A6ECFF outline with the model-named chip; the white
+   corner handles join it while its mark is selected. */
+.anim-area {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid #a6ecff;
+  pointer-events: none;
+}
+
+/* The small square corner handles the design puts on a selected box. */
+.anim-corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: var(--color-white);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+.anim-corner--tl { left: -4px; top: -4px; }
+.anim-corner--tr { right: -4px; top: -4px; }
+.anim-corner--bl { left: -4px; bottom: -4px; }
+.anim-corner--br { right: -4px; bottom: -4px; }
+
+/* The draw surface, present only while armed. */
+.anim-drawlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+/* While drawing, the object boxes go quiet — a drag that starts over the
+   bottle must draw an area, not retarget to the bottle. */
+.anim-hud[data-inert] { pointer-events: none; }
+.anim-hud[data-inert] .anim-hud__box { opacity: 0 !important; }
+
+/* The label chip, per the design: pale cyan, dark lowercase text, sitting ON
+   the box's top edge, left-aligned with its stroke. Shared by object boxes and
+   drawn areas. */
+.anim-hud__tag,
+.anim-area .anim-hud__tag {
+  position: absolute;
+  bottom: 100%;
+  top: auto;
+  left: -1px;
+  padding: 2px 7px 3px;
+  border: none;
+  border-radius: 4px 4px 4px 0;
+  background: #a6ecff;
+  backdrop-filter: none;
+  color: #10333c;
+  font-family: var(--font-brand);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 15px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+/* A box that starts at (or near) the frame's top has no room above it — the
+   chip would leave the picture. It tucks INSIDE the box instead, hanging off
+   the same top-left corner. */
+.anim-hud__box[data-tag-in] .anim-hud__tag,
+.anim-area[data-tag-in] .anim-hud__tag {
+  bottom: auto;
+  top: -1px;
+  border-radius: 0 0 4px 0;
+}
+
+/* --- Timeline shell ----------------------------------------------------------- */
+
+.anim-timeline__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* While the stage's draw mode is armed, the timeline bows out entirely so the
+   canvas has the room — height animates to 0 (set inline) and the paddings
+   and strokes go with it. */
+.anim .anim-timeline {
+  transition: height 0.28s cubic-bezier(0.4, 0, 0.2, 1), padding 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease;
+}
+.anim .anim-timeline[data-hidden] {
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.anim-timeline__body > .anim-playhead {
+  top: var(--anim-ruler-row);
+  bottom: 0;
+  width: 1.5px;
+}
+
+/* No frame around the timeline itself, but hairlines separate the rows —
+   running the full width, rail icons included. */
+.anim .anim-timeline { border-top: none; border-bottom: none; }
+.anim .anim-layer { border-bottom: 0.5px solid var(--anim-stroke-track); }
+.anim .anim-rail { background: var(--color-bg-primary); }
+.anim-rail__icon { color: var(--color-text-tertiary); }
+/* The whole-track toggle in the rail: quiet at rest, amber when live. */
+.anim-rail__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.anim-rail__toggle:hover { color: var(--color-text-primary); background: rgba(255, 255, 255, 0.06); }
+.anim-rail__toggle[data-on] { color: var(--attn-line); background: rgba(255, 221, 51, 0.12); }
+
+/* --- Ruler ---------------------------------------------------------------- */
+
+.anim-ruler-row {
+  position: relative; /* hosts the time pill, outside the clipped strip */
+  flex: 0 0 auto;
+  height: var(--anim-ruler-row);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+/* Tick labels sit at the strip's vertical centre; segments are absolute so the
+   windowed rendering can place only the visible ones. */
+.anim-ruler-row .anim-ruler__ticks { position: relative; height: 100%; padding: 0; display: block; }
+.anim-ruler-row .anim-ruler__seg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.anim-ruler-row .anim-ruler__dots { top: 50%; transform: translateY(-50%); }
+.anim-ruler-row > .anim-ruler {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+  /* The tick strip is ruled top and bottom. */
+  border-top: 0.5px solid var(--anim-stroke-track);
+  border-bottom: 0.5px solid var(--anim-stroke-track);
+}
+.anim-ruler:focus-visible { outline: 1px solid var(--color-primary); outline-offset: -1px; }
+.anim-ruler-row .anim-ruler__ticks { will-change: transform; }
+/* Inside the pill, the take's total duration steps back so the current time
+   carries the emphasis. */
+.anim-ruler__total { color: rgba(29, 31, 32, 0.45); font-weight: 400; }
+
+/* The pill: centred on the playhead, clamped in JS, positioned in the row so
+   no overflow clip can shave it — and as tall as the tick strip itself. */
+.anim-ruler-row > .anim-ruler__time {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  z-index: 8;
+  /* Fully rounded: the pill is as tall as the strip, so half-height = pill. */
+  border-radius: var(--radius-pill);
+}
+
+/* The track stack scrolls sideways only; its height hugs the content, so there
+   is nothing below to scroll to. */
+.anim .anim-tracks { overflow-y: hidden; }
+
+/* Outside the take (lead-in and runout): a faint hatch over slightly deeper
+   dark, so the blank halves read as deliberate "no media" rather than a bug. */
+.anim-offtake {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 9px),
+    rgba(0, 0, 0, 0.28);
+}
+
+/* --- Lanes ---------------------------------------------------------------- */
+
+.anim-layer__lanes {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+}
+.anim-lane-abs { position: absolute; inset: 0; }
+
+/* --- The attention lane -----------------------------------------------------
+   A full-width amber band with one continuous line through its centre. Marks
+   sit ON the line: ● object · ✼ area · ○ none. Runs between marks are derived;
+   a run after a ○ greys out. */
+
+.anim-attn { position: relative; }
+.anim-attn__band {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 32px;
+  background: var(--attn-band);
+  /* Rounded like every other clip on the timeline. */
+  border-radius: var(--radius-md);
+  transition: box-shadow 0.15s ease;
+}
+/* Whole-track selected: built like every other selected clip. The frame is a
+   SINGLE white element (36px tall — band plus 2px reveals — with the 18px cap
+   zones at its ends), and the amber band sits inset inside it with the same
+   6px body radius selected clips use. One paint, so nothing can disconnect. */
+.anim-attn__frame {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--anim-clip-h);
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+/* The grip lines, centred in each cap zone. */
+.anim-attn__frame::before,
+.anim-attn__frame::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: #141515;
+}
+.anim-attn__frame::before { left: 8px; }
+.anim-attn__frame::after { right: 8px; }
+/* Inside the frame the band rounds like every selected clip body. */
+.anim-attn__band[data-on] { border-radius: 6px; }
+/* A run is a stretch of the centre line. */
+.anim-attn__run {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px; /* generous hit area around the 1.5px line */
+  padding: 0;
+  border: none;
+  background:
+    linear-gradient(var(--attn-line), var(--attn-line)) center / 100% 1.5px no-repeat;
+  cursor: pointer;
+}
+.anim-attn__run[data-kind='none'] {
+  background-image: linear-gradient(var(--attn-none), var(--attn-none));
+}
+.anim-attn__run:hover {
+  background-size: 100% 2.5px;
+}
+.anim-attn__run[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+  background-size: 100% 2px;
+}
+
+/* The glyphs. One per mark, centred on the line at the mark's time. */
+.anim-attn__glyph {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--attn-line);
+  z-index: 2;
+}
+/* ● object — a filled dot. */
+.anim-attn__glyph[data-kind='object']::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--attn-line);
+}
+/* ○ none — the same dot with its middle taken out. The border-box reset in
+   index.css skips pseudo-elements, so restate it or the 1.5px ring would draw
+   OUTSIDE the 7px and outgrow its siblings. */
+.anim-attn__glyph[data-kind='none']::before {
+  content: '';
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--attn-line);
+  background: var(--attn-band);
+}
+.anim-attn__glyph:hover { transform: translate(-50%, -50%) scale(1.35); }
+.anim-attn__glyph[data-selected] { color: var(--color-white); }
+.anim-attn__glyph[data-selected][data-kind='object']::before { background: var(--color-white); }
+.anim-attn__glyph[data-selected][data-kind='none']::before { border-color: var(--color-white); }
+
+/* --- Clips: one shape, three flavours -------------------------------------- */
+
+.anim-clip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--anim-clip-h);
+  min-width: 8px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  /* The tint composited over the timeline's own dark, so the clip is OPAQUE —
+     connector lines pass BEHIND clips (z-index below), and a bare 25% wash
+     would let them ghost through the fill. Looks identical to the wash. */
+  background-color: var(--color-bg-primary);
+  background-image: linear-gradient(
+    var(--anim-clip-tint, rgba(255, 255, 255, 0.08)),
+    var(--anim-clip-tint, rgba(255, 255, 255, 0.08))
+  );
+  color: #fff;
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease, background 0.12s ease;
+  /* Above the connector lines (z 1): a line that crosses another cast member's
+     track ducks behind that track's clips instead of striking through them. */
+  z-index: 2;
+}
+.anim-clip:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.anim-clip__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-10);
+  overflow: hidden;
+}
+.anim-clip__label { overflow: hidden; text-overflow: ellipsis; }
+
+/* Selected: a white frame with the clip's own fill inset inside it. */
+.anim-clip[data-selected] {
+  background: var(--color-white);
+  border-color: transparent;
+  overflow: visible;
+  z-index: 3;
+}
+.anim-clip[data-selected] > .anim-clip__body {
+  height: 32px;
+  margin: 0 1px;
+  border-radius: 6px;
+  background-color: var(--anim-clip-selected-base);
+  background-image: linear-gradient(var(--anim-clip-tint), var(--anim-clip-tint));
+  border: 0.5px solid var(--color-hairline);
+}
+.anim-clip--shot[data-selected] { border-radius: var(--radius-md); }
+.anim-clip--shot[data-selected] > .anim-clip__body { flex: 1 1 auto; min-width: 0; }
+.anim-clip--script[data-selected],
+.anim-clip--emoji[data-selected] { border-radius: 0; overflow: visible; }
+/* The emoji body is content-sized and centred, so on its own the selection
+   frame's white would flood the rest of the clip and read as oversized
+   handles. Fill the frame like every other track's body does. */
+.anim-clip--emoji[data-selected] > .anim-clip__body { flex: 1 1 auto; }
+
+/* Shot clips: teal, words only — the reticle icon is retired. */
+.anim-clip--shot { --anim-clip-tint: var(--color-caption-blue); }
+
+.anim-clip--script { font-weight: 500; }
+.anim-clip--emoji { justify-content: center; }
+.anim-clip__body--emoji { justify-content: center; font-size: 15px; line-height: 1; padding: 0 var(--space-6); }
+
+/* Per-avatar tints, published by the row so clip and inset body agree. */
+.anim-avatar-row[data-color='purple'] { --anim-clip-tint: var(--color-caption-purple); }
+.anim-avatar-row[data-color='pink'] { --anim-clip-tint: var(--color-caption-pink); }
+.anim-avatar-row[data-color='green'] { --anim-clip-tint: var(--color-caption-green); }
+
+/* Each word is its own connected inline badge; the one the playhead line is
+   touching lights up (geometric — never the word after). */
+.anim-clip__body--words {
+  padding: 0 var(--space-8);
+  /* The body is the mask; the inner row is what slides. Even when the clip
+     itself has overflow visible (selected, for the outside handles), the words
+     stay contained here. */
+  overflow: hidden;
+}
+.anim-words {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  flex: 0 0 auto;
+  /* Updates continuously with the clock — no transition, or it would
+     rubber-band behind the playhead. */
+  will-change: transform;
+}
+.anim-word {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background 80ms linear, color 80ms linear;
+}
+.anim-word[data-active] { background: rgba(255, 255, 255, 0.92); color: var(--color-gray-900); }
+
+/* --- Adding a line (Figma 758-167324) ----------------------------------------
+   Hovering empty script-lane space grows a green ⊕ beside the pointer; the
+   click spawns a DRAFT clip — selected posture, text-driven width, a cyan
+   caret — that mirrors the Script panel live until Enter makes it real. */
+
+.anim-addbadge {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* The draft is text-sized: the committed window only exists after Enter. */
+.anim-clip--draft { width: max-content; cursor: default; }
+.anim-clip--draft > .anim-clip__body { width: max-content; min-width: 30px; }
+/* Its caps are posture, not controls — nothing to trim yet. */
+.anim-clip--draft .anim-handle { cursor: default; }
+
+/* The ghost nudge: the same voice as every placeholder, quiet on the tint.
+   It IS the draft's whole content — the typed line stays in the panel until
+   Enter commits it onto the track. */
+.anim-draft__ghost { color: rgba(238, 244, 246, 0.35); }
+
+/* A reaction draft keeps the committed chip's window (width set inline), and
+   its gesture-to-be is a ghost until the panel's grid decides it. */
+.anim-clip--emoji.anim-clip--draft > .anim-clip__body { width: auto; flex: 1 1 auto; }
+.anim-draft__ghost-emoji { opacity: 0.4; }
+
+/* --- Edges: seams (contiguous strips) vs trim handles ----------------------- */
+
+.anim-seam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  z-index: 4;
+  cursor: ew-resize;
+  touch-action: none;
+  background: transparent;
+}
+.anim-seam--start { left: -4px; }
+.anim-seam--end { right: -4px; }
+.anim-seam::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.anim-seam:hover::after { background: var(--color-white); }
+
+.anim-handle {
+  /* One number tunes every handle; narrower on the reaction lane where the
+     chip itself is barely wider than a pair of caps. */
+  --anim-handle-w: 16px;
+  position: relative;
+  flex: 0 0 var(--anim-handle-w);
+  width: var(--anim-handle-w);
+  align-self: center;
+  height: var(--anim-clip-h);
+  z-index: 4;
+  background: var(--color-white);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.anim-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: #141515;
+}
+.anim-handle[data-locked] { cursor: default; opacity: 0.45; }
+.anim-handle--in.anim-handle--start { border-radius: var(--radius-md) 0 0 var(--radius-md); }
+.anim-handle--in.anim-handle--end { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.anim-handle--out {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  flex: none;
+}
+.anim-handle--out.anim-handle--start {
+  left: calc(-1 * var(--anim-handle-w));
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.anim-handle--out.anim-handle--end {
+  right: calc(-1 * var(--anim-handle-w));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.anim-clip--emoji .anim-handle { --anim-handle-w: 9px; }
+.anim-clip--emoji .anim-handle::before { height: 10px; }
+
+/* --- Derived connector lines --------------------------------------------- */
+
+.anim-links {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail);
+  right: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.anim-link {
+  position: absolute;
+  width: 11px;
+  padding: 0;
+  border: none;
+  transform: translateX(-50%);
+  background-color: transparent;
+  background-image: linear-gradient(var(--anim-node-line), var(--anim-node-line));
+  background-size: 1px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.anim-link[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+}
+/* Only the SCRIPT end wears a dot — the reaction end runs bare into its chip,
+   so the line reads as the reaction anchored onto the spoken words. */
+.anim-link::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--anim-node-dot);
+}
+.anim-link[data-selected]::before { background: var(--color-white); }
+/* Tangent to the clip edge, not centred on it — the clips paint ABOVE the
+   links, so a centred dot would surface as a half-swallowed sliver. */
+.anim-link[data-script-end='top']::before { top: 0.5px; }
+.anim-link[data-script-end='bottom']::before { bottom: 0.5px; }
+
+/* --- Inspector additions ------------------------------------------------- */
+
+.prop-panel--attn {
+  /* The subject list floats past the panel's bottom edge (as designed) —
+     this panel is short and never scrolls, so clipping costs nothing. */
+  overflow: visible;
+}
+.prop-panel__title { display: inline-flex; align-items: center; gap: var(--space-8); }
+.prop-panel__header-actions { display: inline-flex; align-items: center; gap: var(--space-8); }
+/* Header icon buttons wear the design's outlined chrome (32px, radius 6). */
+.prop-panel__hbtn {
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+/* Per the design: the time columns sit 6px apart, values left-aligned. */
+.prop-panel--attn .prop-panel__fields { gap: var(--space-6); }
+.prop-panel--attn .prop-panel__input-wrap .prop-panel__input {
+  text-align: left;
+  padding-left: var(--space-12);
+}
+
+.prop-panel__note {
+  margin: var(--space-6) 0 0;
+  font-size: var(--fs-11);
+  line-height: 15px;
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-tertiary);
+}
+.prop-panel__section > .prop-panel__label { display: block; margin-bottom: var(--space-8); }
+
+/* --- The Attention panel's kind row ----------------------------------------
+   One row, two postures. UNFOLDED: the three kinds laid out as chips (a fresh
+   mark opens here — choosing is the whole job). COLLAPSED: the picked kind as
+   a dropdown beside that kind's target control. The dropdown IS the collapsed
+   chips: clicking it unfolds them again. Values are from the Figma frames
+   (jess-mirage 710:134144 / 710:134517–135680). */
+
+.attn-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-6);
+}
+.attn-row > * { animation: attn-swap 160ms ease; }
+@keyframes attn-swap {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The mark's symbol, drawn in the track's own amber. */
+.attn-glyph { display: inline-flex; color: var(--attn-line); }
+
+/* Unfolded: ONE segmented control asking the question, under a quiet label —
+   a single grouped object reads as a control the way three floating chips
+   never did. Segments cascade in so the row visibly arrives to be answered.
+   A fresh mark shows no selection until the user commits (its inherited kind
+   is an accident of contiguity, not an answer). */
+.attn-seg {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: var(--space-8);
+}
+/* One option = a glyph-only box with its caption below; the whole column is
+   the button. */
+.attn-seg__opt {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  animation: attn-swap 200ms ease backwards;
+}
+.attn-seg__opt:nth-child(2) { animation-delay: 30ms; }
+.attn-seg__opt:nth-child(3) { animation-delay: 60ms; }
+.attn-seg__box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  transition: background 0.12s ease;
+}
+.attn-seg__opt:hover .attn-seg__box { background: rgba(255, 255, 255, 0.14); }
+.attn-seg__opt[data-picked] .attn-seg__box { background: var(--color-surface-hover); }
+.attn-seg__caption {
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-tertiary);
+  transition: color 0.12s ease;
+}
+.attn-seg__opt:hover .attn-seg__caption,
+.attn-seg__opt[data-picked] .attn-seg__caption { color: var(--color-text-primary); }
+
+/* --- The Camera State panel -------------------------------------------------
+   Two pages in one panel (summary ⇄ edit); the shells and controls reuse the
+   attention panel's tokens. Values from the Figma frames (jess-mirage
+   726:139781). */
+
+.cam-page { display: flex; flex-direction: column; width: 100%; animation: attn-swap 160ms ease; }
+
+/* The summary row: the state's derived name with the pencil that opens it. */
+.cam-namerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-height: 52px;
+}
+.cam-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cam-namerow .icon-btn { color: var(--color-text-secondary); }
+
+/* The edit page's back button carries a filled chrome, per the design. */
+.prop-panel__hbtn--filled { background: var(--color-surface); }
+
+/* Dropdown menus under full-width fields keep the design's 141px width. */
+.attn-menu--fit { right: auto; width: 141px; }
+
+/* Stability: a slider field and its value box, split by a 1.5px seam. */
+.cam-slider-row { display: flex; align-items: stretch; gap: 1.5px; width: 100%; }
+.cam-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 var(--space-16) 0 var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.cam-slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.cam-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--color-white) 0 var(--fill, 50%), #2a2c2d var(--fill, 50%) 100%);
+}
+.cam-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-white);
+}
+.cam-slider input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #2a2c2d;
+}
+.cam-slider input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-white);
+}
+.cam-slider input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-white);
+}
+.cam-slider-value {
+  flex: 0 0 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-primary);
+}
+
+/* --- The Interaction panel ----------------------------------------------------
+   Three pages (summary ⇄ emoji vocabulary ⇄ custom prompt/draw); shells and
+   controls reuse the attention/camera kit. Values from the Figma frames
+   (jess-mirage 728:141532). */
+
+/* Time fields wear ONE dress across every inspector — the Camera State
+   panel's tight column gap comes from .prop-panel--attn, shared by all. */
+
+.ix-avatar { border-radius: 50%; object-fit: cover; }
+
+/* The parent line, wearing its speaker's track colour. The menu it opens is
+   deliberately short — only the lines in the reaction's own stretch of the
+   take are offered (see InteractionPanel's candidates). */
+.ix-parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: 41px;
+  padding: var(--space-8) var(--space-10) var(--space-8) var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  cursor: pointer;
+}
+.ix-parent__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ix-parent[data-color='purple'] { --ix-c: var(--color-caption-purple); }
+.ix-parent[data-color='pink'] { --ix-c: var(--color-caption-pink); }
+.ix-parent[data-color='green'] { --ix-c: var(--color-caption-green); }
+.ix-parent[data-color] {
+  background: color-mix(in srgb, var(--ix-c) 24%, transparent);
+  border-color: color-mix(in srgb, var(--ix-c) 60%, transparent);
+}
+
+.ix-gesture { display: inline-flex; flex: 1 1 auto; align-items: center; gap: var(--space-8); min-width: 0; }
+
+/* The shortcode tag doubles as the rename affordance: press it and the inline
+   input swaps in where it sat, in the same voice as the other identity rows. */
+.ix-tag-rename {
+  border: none;
+  font-family: var(--font-brand);
+  text-align: left;
+  cursor: text;
+  transition: background 0.12s ease;
+}
+.ix-tag-rename:hover { background: rgba(255, 255, 255, 0.18); }
+
+/* The emoji vocabulary: five columns of bordered tiles. */
+.ix-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-8) 15px;
+}
+.ix-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  padding: 0;
+  background: none;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: 10px;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.ix-emoji:hover { background: rgba(255, 255, 255, 0.08); }
+.ix-emoji[data-picked] { background: var(--color-surface-hover); }
+
+/* Prompt | Draw tabs. */
+.ix-tabs {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-10) var(--space-12);
+  border-bottom: 0.5px solid var(--color-hairline);
+}
+.ix-tab {
+  height: 36px;
+  padding: 0 var(--space-12);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ix-tab:hover { color: var(--color-text-primary); }
+.ix-tab[data-active] { background: var(--color-surface-hover); color: var(--color-text-primary); }
+
+.ix-prompt { min-height: 67px; resize: none; }
+.ix-prompt::placeholder { color: var(--color-text-secondary); }
+
+/* The draw canvas fills the section; strokes keep true width at any size. */
+.ix-canvaswrap {
+  position: relative;
+  /* Column flex so the Done check below the canvas can hug the right edge;
+     the ink toolbar floats absolutely and doesn't participate. */
+  display: flex;
+  flex-direction: column;
+}
+.ix-canvas {
+  display: block;
+  width: 100%;
+  /* Just taller than the floating ink toolbar (its 20px offset + 406px),
+     so the tools never hang past the canvas — and no more. */
+  height: 432px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  cursor: crosshair;
+  touch-action: none;
+}
+/* The eraser sweeps rather than draws, and the cursor says so. */
+.ix-canvas[data-tool='eraser'] { cursor: cell; }
+.ix-canvas polyline {
+  fill: none;
+  stroke-width: 2px;
+  /* The viewBox stretches to the canvas; the ink must not. */
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The floating ink toolbar, riding just off the panel's left edge. */
+.ix-tools {
+  position: absolute;
+  left: -62px;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-10);
+  width: 50px;
+  padding: 14px 0;
+  background: var(--color-bg-primary, #151617);
+  border-radius: 25px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.ix-ink {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ix-ink[data-picked] { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 2px; }
+.ix-tools__gap { height: var(--space-8); }
+.ix-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.ix-tool:hover { color: var(--color-text-primary); background: rgba(255, 255, 255, 0.08); }
+.ix-tool[data-active] { color: var(--color-text-primary); }
+/* Done wears the primary — it is the rail's one committing act. */
+/* Done: the same circled check the scene cards commit with (mir-edit__confirm)
+   — below the canvas, hugging its right edge. Lit cyan only once there is a
+   drawing to commit. */
+.ix-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: var(--space-10);
+  align-self: flex-end;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-gray-900);
+  cursor: pointer;
+}
+.ix-confirm:disabled {
+  background: var(--color-button-disabled);
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+/* --- The Script panel -----------------------------------------------------------
+   Family style: the line, its window, and a collapsible Interactions group —
+   who reacts (the add row) and what already reacts (the reaction rows). */
+
+.sx-groupheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-10) var(--space-12);
+  background: none;
+  border: none;
+  border-bottom: 0.5px solid var(--color-hairline);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  cursor: pointer;
+}
+/* The section's orbit mark runs tertiary — quieter than the header text. */
+.sx-groupheader .prop-panel__title svg { color: var(--color-text-tertiary); }
+.sx-groupheader__chevron {
+  color: var(--color-text-secondary);
+  transition: transform 150ms ease;
+}
+.sx-groupheader__chevron[data-open] { transform: rotate(180deg); }
+
+.sx-reactions { display: flex; flex-direction: column; gap: 14px; }
+
+/* A reaction this line triggers: when · who · what. Clicking opens it. */
+.sx-reaction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--space-8);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  font-family: var(--font-brand);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.sx-reaction:hover { background: rgba(255, 255, 255, 0.14); }
+.sx-reaction__gesture {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: 15px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+.sx-reaction__label {
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Delete: the panel's last row, full width, quiet outline. */
+.attn-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  width: 100%;
+  height: 40px;
+  background: none;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.attn-delete:hover { background: rgba(255, 255, 255, 0.06); }
+/* Armed later — a draft's reactions wait for the line to exist. */
+.attn-delete:disabled { color: var(--color-text-disabled); cursor: default; }
+.attn-delete:disabled:hover { background: none; }
+
+/* Collapsed: filled fields, the shared input token. */
+.attn-select {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: 40px;
+  padding: var(--space-8) var(--space-10) var(--space-8) var(--space-12);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+button.attn-select:hover { background: rgba(255, 255, 255, 0.14); }
+.attn-select__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attn-select__value[data-placeholder] { color: var(--color-text-secondary); }
+.attn-select__caret { flex: 0 0 auto; color: var(--color-text-secondary); transition: transform 150ms ease; }
+.attn-select__caret[data-open] { transform: rotate(180deg); }
+/* Draw mode is live on the stage — the field just says so. */
+.attn-select--live { color: var(--color-text-secondary); cursor: default; }
+
+/* The area label: an editable field with the redraw pencil tucked inside. */
+.attn-field {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 40px;
+  padding: 0 var(--space-6) 0 0;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+}
+.attn-field:focus-within { border-color: var(--color-hairline-focus); }
+.attn-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0 0 var(--space-12);
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+}
+.attn-field__input:focus { outline: none; }
+
+/* The floating subject list: what is on screen at this mark's moment.
+   Hovering a row lights its box on the canvas; clicking a box on the canvas
+   picks it here — one choice, two surfaces. */
+.attn-select-wrap { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
+.attn-select-wrap > .attn-select { flex: 1 1 auto; }
+.attn-menu {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border-bottom: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  animation: attn-menu-in 140ms ease;
+}
+@keyframes attn-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.attn-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: var(--space-6) var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.attn-menu__item:hover,
+.attn-menu__item[data-picked] { background: var(--color-surface-hover); }
+
+.prop-panel__readout {
+  display: block;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--fs-13);
+  text-align: center;
+}
+
+.prop-panel__textarea {
+  resize: none;
+  width: 100%;
+  padding: var(--space-8) var(--space-10);
+  background: rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  line-height: 18px;
+  letter-spacing: var(--tracking-body);
+}
+.prop-panel__textarea:focus { outline: none; border-color: var(--color-hairline-focus); }
+
+.prop-panel__emojigrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-6); }
+.prop-panel__emojibtn {
+  height: 34px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.prop-panel__emojibtn:hover { background: rgba(255, 255, 255, 0.14); }
+.prop-panel__emojibtn[data-picked] { border-color: var(--color-primary); background: rgba(0, 208, 255, 0.14); }
+
+.prop-panel__list { display: flex; flex-direction: column; gap: var(--space-6); }
+.prop-panel__listrow-label--button {
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--color-text-primary);
+  font-family: var(--font-brand);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.prop-panel__listrow-label--button:hover { text-decoration: underline; }
+
+.prop-panel__addrow { display: flex; gap: var(--space-6); margin-top: var(--space-8); }
+.prop-panel__add--compact { height: 32px; font-size: var(--fs-12); }
+.prop-panel__add:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.prop-panel__section--actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  border-bottom: none;
+}
+.prop-panel__section--actions .prop-panel__add { flex: 1 1 auto; }
+.prop-panel__section--actions .prop-panel__note { flex: 1 1 auto; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-clip,
+  .anim-word,
+  .anim-attn__glyph { transition: none; }
+}
+
+/* --- Subject lens: the presence lane (Figma 756-166274) ----------------------
+   One entity's on-screen life. The multitrack stays mounted (hidden)
+   underneath so the scroller's scroll-is-scrub wiring survives the lens; the
+   lane itself is a derived view like the ruler, mapped through pad/scrollLeft. */
+
+/* The height morph itself rides the timeline's existing transition (see the
+   draw-mode rules above) — but a resizer drag must track the pointer raw. */
+body.is-row-resizing .anim-timeline { transition: none; }
+
+/* Hidden, not unmounted: the scroller keeps its width, its listeners and its
+   scroll position, so leaving the lens restores the multitrack mid-thought. */
+.anim-timeline[data-lens] .anim-tracks { visibility: hidden; }
+
+.anim-presence {
+  /* Track/Transitions from the design's variables. */
+  --presence-line: #46e7b4;
+  position: absolute;
+  top: var(--anim-ruler-row);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  animation: anim-presence-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes anim-presence-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* Reuses the rail's look but sits in a flex row, not a scroller — no sticky. */
+.anim-presence__rail { position: relative; left: auto; }
+.anim-presence__viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* The baseline spans the whole strip — absence is a state on an axis that was
+   always there, not a hole in a clip. */
+.anim-presence__base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1.5px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+/* A run is a stretch of the line — same anatomy as an attention run. */
+.anim-presence__run {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px; /* generous hit area around the 1.5px line */
+  padding: 0;
+  border: none;
+  background:
+    linear-gradient(var(--presence-line), var(--presence-line)) center / 100% 1.5px no-repeat;
+  cursor: pointer;
+}
+.anim-presence__run:hover { background-size: 100% 2.5px; }
+.anim-presence__run[data-selected] {
+  background-image: linear-gradient(var(--color-white), var(--color-white));
+  background-size: 100% 2px;
+}
+/* Beads: an entrance or an exit, draggable along the line. */
+.anim-presence__bead {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  z-index: 2;
+  transition: transform 0.12s ease;
+}
+.anim-presence__bead::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--presence-line);
+}
+.anim-presence__bead:hover { transform: translate(-50%, -50%) scale(1.35); }
+.anim-presence__bead[data-selected]::before { background: var(--color-white); }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-presence { animation: none; }
+  .anim-presence__bead { transition: none; }
+}
+
+/* The presence layer's cursor tag: the hovered subject's label riding the
+   pointer (Figma 751-162363) — same chip as the docked tag, with the corner
+   nearest the cursor tip kept tighter so it still points home. Hidden until the first pointermove
+   places it; pointer-events off so it can never steal the hover it names. */
+.anim-hud__cursortag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 2px 9px 3px;
+  border-radius: 3px 8px 8px 8px;
+  background: #a6ecff;
+  color: #10333c;
+  font-family: var(--font-brand);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 15px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+/* The tight corner tracks which side of the cursor the chip landed on. */
+.anim-hud__cursortag[data-flip-x='true'] { border-radius: 8px 3px 8px 8px; }
+.anim-hud__cursortag[data-flip-y='true'] { border-radius: 8px 8px 8px 3px; }
+.anim-hud__cursortag[data-flip-x='true'][data-flip-y='true'] { border-radius: 8px 8px 3px 8px; }

@@ -1,62 +1,29 @@
-import {
-  ArrowLeft,
-  FadersHorizontal,
-  Layout,
-  ArrowCounterClockwise,
-  ArrowClockwise,
-  DownloadSimple,
-  DotsThree,
-} from '@phosphor-icons/react';
+import { DownloadTray, RedoArrow, UndoArrow } from '../../../assets/icons';
 import { IconButton } from '../../../ui/IconButton';
 import { Button } from '../../../ui/Button';
 
-/** Top app header: back + title, layout toggles, undo/redo + download.
- *  The Layout button doubles as the chat panel's show/hide toggle, so the panel
- *  can be brought back after it has been closed from its own X. */
-export function AppHeader({
-  chatOpen,
-  onToggleChat,
-}: {
-  chatOpen: boolean;
-  onToggleChat: () => void;
-}) {
+/**
+ * Top app header: the project title on the left; undo/redo and the download
+ * action on the right. The middle toggle group (layout/filters) stays retired
+ * with the three-level system.
+ */
+export function AppHeader({ title }: { title: string }) {
   return (
     <header className="anim-header">
       <div className="anim-header__group">
-        <IconButton size={40} aria-label="Back">
-          <ArrowLeft size={20} />
-        </IconButton>
-        <span className="anim-header__title">Tokyo Offsite</span>
-      </div>
-
-      <div className="anim-header__group">
-        <IconButton size={40} variant="active" aria-label="Filters">
-          <FadersHorizontal size={20} />
-        </IconButton>
-        <IconButton
-          size={40}
-          variant={chatOpen ? 'active' : undefined}
-          aria-label={chatOpen ? 'Hide chat panel' : 'Show chat panel'}
-          aria-pressed={chatOpen}
-          onClick={onToggleChat}
-        >
-          <Layout size={20} />
-        </IconButton>
+        <span className="anim-header__title">{title}</span>
       </div>
 
       <div className="anim-header__group">
         <IconButton size={40} aria-label="Undo">
-          <ArrowCounterClockwise size={20} />
+          <UndoArrow size={20} />
         </IconButton>
         <IconButton size={40} aria-label="Redo">
-          <ArrowClockwise size={20} />
+          <RedoArrow size={20} />
         </IconButton>
-        <Button variant="primary" leftIcon={<DownloadSimple size={20} weight="bold" />}>
+        <Button variant="primary" leftIcon={<DownloadTray size={20} />}>
           Download video
         </Button>
-        <IconButton size={40} aria-label="More">
-          <DotsThree size={20} weight="bold" />
-        </IconButton>
       </div>
     </header>
   );

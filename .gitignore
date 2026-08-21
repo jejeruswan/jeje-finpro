@@ -25,3 +25,6 @@ dist-ssr
 
 # Rivet CLI workspace
 .rivet/
+
+# The take itself is too large for GitHub (224MB > 100MB limit) — fetch separately.
+public/assets/video.mp4
