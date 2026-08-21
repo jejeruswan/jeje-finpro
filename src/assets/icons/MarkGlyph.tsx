@@ -38,3 +38,22 @@ export function MarkGlyph({ kind, size = 15 }: { kind: AttentionKind; size?: num
     </svg>
   );
 }
+
+/**
+ * The area mark's bare ✼ — the same six strokes MarkGlyph draws for Area,
+ * without the trailing run-line. Sized ABOVE the 7px object/none dots on
+ * purpose: thin spokes carry far less ink than a solid disc, so matching
+ * their boxes made the flower read too small — ~10px of spokes is what
+ * optically matches a 7px dot.
+ */
+export function AreaFlower({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <g stroke="currentColor" strokeLinecap="round">
+        <path d="M4.5 1.3V7.7" />
+        <path d="M1.73 2.9L7.27 6.1" />
+        <path d="M1.73 6.1L7.27 2.9" />
+      </g>
+    </svg>
+  );
+}

@@ -77,6 +77,7 @@
   --color-surface: #1d1f20;          /* panels, secondary buttons */
   --color-surface-hover: #333437;    /* hovered / active secondary */
   --color-hairline: rgba(255, 255, 255, 0.1);   /* 0.5px borders everywhere */
+  --color-hairline-focus: rgba(255, 255, 255, 0.25); /* input focus stroke — the hairline language, a step brighter */
   --color-grey-950: #131417;                    /* darker editor container */
 
   /* Track colors — solid 100% (kept for future use / recoloring) */

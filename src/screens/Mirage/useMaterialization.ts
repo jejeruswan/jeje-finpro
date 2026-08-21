@@ -32,10 +32,11 @@ export function useMaterialization() {
     });
   }, []);
 
-  /** A scene inserted by the user (Raw 07's + node) cooks like a generated one. */
-  const cook = useCallback((id: string, ms = 3200) => {
+  /** A blank inserted card spawns visible and READY — it must not cook while
+   *  its edit form is open; the ✓ commit recooks it into its first render. */
+  const spawnReady = useCallback((id: string) => {
     setSpawned((list) => (list.includes(id) ? list : [...list, id]));
-    timers.current.push(window.setTimeout(() => setReady((m) => ({ ...m, [id]: true })), ms));
+    setReady((m) => ({ ...m, [id]: true }));
   }, []);
 
   /** A generative edit (summary, duration, cast) marks the scene stale: its
@@ -48,5 +49,5 @@ export function useMaterialization() {
 
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
 
-  return { started, begin, cook, recook, spawnedIds: spawned, readyMap: ready };
+  return { started, begin, spawnReady, recook, spawnedIds: spawned, readyMap: ready };
 }

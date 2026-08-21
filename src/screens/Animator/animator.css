@@ -268,51 +268,50 @@
 }
 .anim-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
-/* --- Embedded filmstrip scrubber (Figma 673-130315) -------------------------
-   The take's time player, drawn inside the video frame's bottom band: play
-   pill at the left, one thumb per scene, the cyan playhead pin riding the
-   strip, and the current segment's index at the right edge. */
-/* With the strip, the play pill is a fixture of the band (Figma 673-130315),
-   not a hover reveal. Doubled class outranks timeline.css's hover-hide, which
-   loads after this sheet.
+/* --- Filmstrip scrubber (Figma 756-165386) -----------------------------------
+   The take's time player, riding ABOVE the video frame and left-aligned with
+   it: one thumb per scene, the cyan playhead hairline gliding across, and an
+   edge shadow on any side with thumbs clipped out of view. */
 
-   Play pill, thumbs and index chip share one MATERIAL (dark glass) and one
-   centerline (the thumb row's, 40.5px up), so the whole band reads as a
-   single control instead of three strays on the picture. */
-.anim-preview.anim-preview--strip .anim-play {
-  left: 20px;
-  bottom: 24px;
-  width: 33px;
-  height: 33px;
-  z-index: 4;
-  opacity: 1;
-  background: rgba(10, 11, 11, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: none;
+/* The stage column: strip band on top, video frame under it. The 8px gap plus
+   the band's 4px overshoot padding lands the design's 12px strip-to-video gap. */
+.anim-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 631px;
+  max-width: 100%;
+  min-height: 0;
 }
-.anim-preview.anim-preview--strip .anim-play:hover { background: rgba(10, 11, 11, 0.65); }
-/* A scrim, not an eraser: it darkens the PICTURE for control legibility and
-   fades to transparent black — never to the page background, which dissolved
-   the frame's bottom edge and corners into the page. */
-.anim-strip-shade {
+.anim-canvas .anim-stage .anim-preview { width: 100%; }
+
+/* Strip mode's play control: the same 40px pill as the chat utility (it IS an
+   IconButton), docked at the canvas's bottom-left. Its left inset and its gap
+   above the time ticks match, so the corner reads even. */
+.anim-play--dock {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 61px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55));
+  left: var(--space-16);
+  /* The canvas's bottom edge sits 18px above the time ticks (the resizer), so
+     the button overhangs it by 2px — its gap to the ticks is then exactly the
+     16px of its left inset, and the corner reads even. */
+  bottom: -2px;
   z-index: 2;
-  pointer-events: none;
+}
+
+.anim-strip-band { position: relative; min-width: 0; }
+/* The clip window: thumbs beyond the frame's width hide behind the edge
+   shadows; the window's scroll follows the playhead (FilmstripScrubber). The
+   4px vertical padding keeps the pin's overshoot inside the clip. */
+.anim-strip-clip {
+  overflow: hidden;
+  padding: 4px 0;
 }
 .anim-strip {
-  position: absolute;
-  left: 63px;
-  bottom: 26px;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  z-index: 3;
+  width: max-content;
   touch-action: none;
   /* Scrub drags must never start a selection — the blue sweep it paints
      across the thumbs buries the pin. */
@@ -326,7 +325,7 @@
   height: 29px;
   flex: none;
   padding: 0;
-  border: 1.2px solid transparent;
+  border: 2px solid transparent;
   border-radius: 4.77px;
   background: var(--color-bg-secondary);
   overflow: hidden;
@@ -340,61 +339,49 @@
   display: block;
   pointer-events: none;
 }
-/* The playhead pin: a dot-topped hairline spanning a little past the thumbs.
-   Grabbable — the span is wider than the visuals (which stay centered at 50%)
-   to give the drag a comfortable hit zone. */
+/* The playhead pin: a 2px rounded cyan hairline (Figma Vector 839) overshooting
+   the thumbs by 3.5px on each side. Grabbable — the span is wider than the
+   visual (which stays centered at 50%) to give the drag a comfortable hit zone. */
 .anim-strip__pin {
   position: absolute;
-  top: -14px;
-  bottom: -6px;
+  top: -3.5px;
+  height: 36px;
   width: 16px;
   transform: translateX(-50%);
   cursor: grab;
   touch-action: none;
+  z-index: 1;
 }
 .anim-strip__pin:active { cursor: grabbing; }
 .anim-strip__pin::before {
   content: '';
   position: absolute;
   left: 50%;
-  top: 6px;
-  bottom: 0;
-  width: 1.5px;
-  transform: translateX(-50%);
-  background: var(--color-primary);
-}
-.anim-strip__pin::after {
-  content: '';
-  position: absolute;
-  left: 50%;
   top: 0;
-  width: 7px;
-  height: 7px;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
   transform: translateX(-50%);
-  border-radius: 50%;
   background: var(--color-primary);
 }
-/* The segment readout: a quiet glass chip on the band's centerline — same
-   material as the play pill. The current number is the only bright thing. */
-.anim-strip__index {
+/* Edge shadows (Figma 756-165406/165408): the page tone fading over the strip,
+   marking the side where thumbs sit out of view. Rendered only then. */
+.anim-strip__shadow {
   position: absolute;
-  right: 20px;
-  bottom: 30px;
-  z-index: 3;
-  padding: 3px 10px 4px;
-  border: 0.5px solid var(--color-hairline);
-  border-radius: var(--radius-pill);
-  background: rgba(10, 11, 11, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  font-size: 11px;
-  line-height: 14px;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.55);
+  top: 0;
+  bottom: 0;
+  width: 76px;
+  z-index: 2;
   pointer-events: none;
 }
-.anim-strip__index-now { color: #fff; font-weight: 500; }
+.anim-strip__shadow--l {
+  left: 0;
+  background: linear-gradient(to right, var(--color-bg-primary), rgba(20, 21, 21, 0));
+}
+.anim-strip__shadow--r {
+  right: 0;
+  background: linear-gradient(to left, var(--color-bg-primary), rgba(20, 21, 21, 0));
+}
 
 /* Zoom controls pinned to the bottom-right corner, outside the video frame. */
 .anim-zoom {
@@ -637,8 +624,10 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
 
 /* Layers 2-4: avatars */
 .anim-avatar-row { height: 104px; }
-/* 30×30 avatar portraits in the sticky rail, per Raw 09. */
-.anim-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 0.5px solid var(--color-hairline); }
+/* Avatar portraits in the sticky rail. The design's Raw 09 drew them 30×30,
+   but next to the rail's 18px attention/camera glyphs that reads top-heavy —
+   22px keeps them recognisable while sitting in the icons' size family. */
+.anim-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 0.5px solid var(--color-hairline); }
 .anim-avatar-row__lanes { position: relative; flex: 1 1 auto; align-self: stretch; }
 .anim-lane { position: absolute; left: 0; right: 0; height: 52px; }
 .anim-lane--script { top: 0; }
@@ -878,6 +867,10 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   flex: 0 0 auto;
 }
 .prop-panel__title { font-size: 14px; font-weight: 500; letter-spacing: var(--tracking-heading); color: var(--color-text-primary); }
+/* In the HEADER only, the name chip sits 12px off the title (the row's 8px gap
+   plus this) so it reads as a companion, not part of the word. List-row chips
+   keep the plain 8px rhythm. */
+.prop-panel__title .prop-panel__chip { margin-left: var(--space-4); }
 
 .prop-panel__row {
   display: flex;
@@ -939,6 +932,9 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   border-bottom: 0.5px solid var(--color-hairline);
   flex: 0 0 auto;
 }
+/* The bottom-most section keeps no divider — a straight hairline right above
+   the panel's rounded bottom edge reads as a doubled stroke. */
+.prop-panel__section:last-child { border-bottom: none; }
 
 /* Collapsible group (Eye Contact): the header row toggles the body below it.
    The body wraps the add-a-focus control and the focus rows, so they show/hide
@@ -977,7 +973,7 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   font-size: var(--fs-13);
   letter-spacing: var(--tracking-body);
 }
-.prop-panel__input:focus { outline: none; border-color: var(--color-primary); }
+.prop-panel__input:focus { outline: none; border-color: var(--color-hairline-focus); }
 /* Inline rename swaps into the identity row, so it drops the field chrome and
    sits flush where the static title was. */
 .prop-panel__input--inline { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-8); }
@@ -1027,7 +1023,7 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   letter-spacing: var(--tracking-body);
   cursor: pointer;
 }
-.prop-panel__select:focus { outline: none; border-color: var(--color-primary); }
+.prop-panel__select:focus { outline: none; border-color: var(--color-hairline-focus); }
 /* Chip-sized variant for the selects that sit inline in a list row, so they
    read as the same token as the static chips beside them. */
 .prop-panel__select--chip {
@@ -1091,18 +1087,24 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   border-radius: var(--radius-md);
 }
 .prop-panel__chip {
-  padding: 2px var(--space-8);
+  /* A step below the 14px panel title in size and a step up in weight — at
+     the title's own size the chip competed with it and read as a blob. */
+  padding: 4px var(--space-10);
   background: rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-13);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
   letter-spacing: var(--tracking-body);
   color: #fff;
 }
 /* A speaker chip carries that avatar's track colour, so an interaction stays
-   attributable to whoever performs it — not to the clip that owns the row. */
-.prop-panel__chip--purple { background: var(--color-caption-purple); }
-.prop-panel__chip--pink { background: var(--color-caption-pink); }
-.prop-panel__chip--green { background: var(--color-caption-green); }
+   attributable to whoever performs it — not to the clip that owns the row.
+   The --color-caption-* tokens are 25% washes made for tinting clips over
+   footage; as a chip FILL on the dark panel they go muddy, so the chip wears
+   a fainter wash of the hue and puts the full-strength colour in the name. */
+.prop-panel__chip--purple { background: rgba(108, 77, 247, 0.22); color: #c9bcff; }
+.prop-panel__chip--pink { background: rgba(255, 155, 178, 0.16); color: #ffc2d0; }
+.prop-panel__chip--green { background: rgba(70, 231, 180, 0.16); color: #8df0cd; }
 /* Trailing free text in a list row (the interaction verb). */
 .prop-panel__listrow-label {
   flex: 1 1 auto;
@@ -1213,4 +1215,24 @@ button.anim-header__crumb:hover {
   min-height: 0;
   min-width: 0;
   border-radius: 0;
+}
+
+/* --- Subject lens ------------------------------------------------------------
+   Entering a subject: the timeline collapses to its presence lane and the
+   stage takes the room it leaves — the video grows toward the lens frame's
+   686px (Figma 756-166093), sliding on the same curve the timeline uses. */
+.anim-stage { transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+.anim[data-lens] .anim-stage { width: 686px; }
+
+/* Screen time is a fact, not a headline: seconds first, the share muted. */
+.presence-stat {
+  margin: 0;
+  font-size: var(--fs-13);
+  letter-spacing: var(--tracking-body);
+  color: var(--color-text-secondary);
+}
+.presence-stat__share { color: var(--color-text-tertiary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-stage { transition: none; }
 }

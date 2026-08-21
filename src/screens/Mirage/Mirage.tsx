@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animator } from '../Animator/Animator';
-import { SCENE_DURATION, TAKE_CUTS } from '../Animator/data';
+import { SCENE_DURATION, SOURCE_VIDEO, TAKE_CUTS } from '../Animator/data';
 import { Corkboard } from './components/Corkboard';
 import { EditorHeader } from './components/EditorHeader';
 import { HomePrompt } from './components/HomePrompt';
 import {
-  makeInsertedScene,
+  AVATARS,
+  makeBlankScene,
   PROJECT_TITLE,
   PROMPT_TEXT,
   SCENES,
   sceneById,
+  type AvatarId,
   type Scene,
   type ScenePatch,
 } from './data';
 import { useMaterialization } from './useMaterialization';
 import { useZoomGesture, type ZoomFocus } from './useZoomGesture';
-import { EASE, MORPH_MS, flightIn, flightOut, grabVideoFrame, type RectMap } from './levelFlight';
+import { EASE, MORPH_MS, flightIn, flightOut, grabVideoFrame, type FlightClip, type RectMap } from './levelFlight';
 import './mirage.css';
 
 /* ----------------------------------------------------------------------------
@@ -61,11 +63,54 @@ export function Mirage() {
   const [ghost, setGhost] = useState<{ level: Level; count: number } | null>(null);
   const [sceneId, setSceneId] = useState(SCENES[0].id);
   const [scenes, setScenes] = useState<Scene[]>(SCENES);
+  /** Avatars added to the VIDEO beyond the ones its scenes already use. The
+   *  video's cast — the pool scene-level editing can pull from, and the face
+   *  pile in the board meta — is the union of every scene's cast and these. */
+  const [addedAvatars, setAddedAvatars] = useState<AvatarId[]>([]);
+  const videoCast: AvatarId[] = (() => {
+    const seen = new Set<string>();
+    const ids: AvatarId[] = [];
+    for (const s of scenes)
+      for (const m of s.cast)
+        if (m.id in AVATARS && !seen.has(m.id)) {
+          seen.add(m.id);
+          ids.push(m.id as AvatarId);
+        }
+    for (const id of addedAvatars)
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    return ids;
+  })();
   const [hint, setHint] = useState(0);
   // Level 3's chat panel — owned here so the fixed header's toggles reach it.
   const [chatOpen, setChatOpen] = useState(true);
 
   const mat = useMaterialization();
+
+  /* Warm every cache while the prompt screen is up: decode the corkboard
+     thumbnails and avatar chips ahead of materialization (over a real network
+     the cards must never land with empty frames), and fetch the take video so
+     the first zoom into the canvas doesn't pay for it mid-flight. */
+  useEffect(() => {
+    for (const s of SCENES) {
+      const img = new Image();
+      img.src = s.thumb;
+      img.decode?.().catch(() => undefined);
+    }
+    for (const a of Object.values(AVATARS)) {
+      new Image().src = a.chip;
+    }
+    const warm = document.createElement('video');
+    warm.preload = 'auto';
+    warm.muted = true;
+    warm.src = SOURCE_VIDEO;
+    warm.load();
+    return () => {
+      warm.removeAttribute('src');
+    };
+  }, []);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const levelRef = useRef<Level>(level);
@@ -186,10 +231,26 @@ export function Mirage() {
       window.clearTimeout(revealT);
       setGhost(null);
       if (stageEl) {
+        /* The board's own edge fades return INSTANTLY (their 0.25s transition
+           suppressed for a beat): the overlay's mirrored fades still cover them
+           at full strength, so the swap is invisible — letting them ease back
+           in used to leave a window where a landed clone sat ABOVE a
+           half-strength shadow. */
+        const fadeEls = stageEl.querySelectorAll<HTMLElement>('.mir-board__fade');
+        fadeEls.forEach((el) => (el.style.transition = 'none'));
         delete stageEl.dataset.morph;
         stageEl.classList.remove('mir-stage--reveal');
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => fadeEls.forEach((el) => (el.style.transition = ''))),
+        );
       }
       if (overlay) {
+        /* The whole overlay (clones AND mirrored fades together) crossfades
+           over the real board, whose own edge fade is already back at full —
+           so at every instant exactly ONE shadow covers the edge cards. Fading
+           parts separately double-darkens the edges; easing the board's fade
+           back in (the old behaviour) leaves a beat where a landed thumbnail
+           sits over a half-strength shadow. */
         overlay
           .animate([{ opacity: 1 }, { opacity: 0 }], {
             duration: 180,
@@ -207,6 +268,15 @@ export function Mirage() {
         const stageEl = stageRef.current;
         const order = scenesRef.current.map((s) => ({ id: s.id, thumb: s.thumb }));
         if (!stageEl) return finish(null);
+
+        // Everything the flight draws stays inside the editor window's rounded
+        // panel — clones are clipped at the stage's bounds like the cards and
+        // strip they stand in for, never spilling onto the window frame.
+        const win = stageEl.closest('.mir-editor__window');
+        const clip: FlightClip = {
+          rect: stageEl.getBoundingClientRect(),
+          radius: (win && getComputedStyle(win).borderRadius) || '24px',
+        };
 
         /* The camera move under the clone flight: the outgoing ghost recedes
            past the lens (in) or falls away (out) while the incoming level
@@ -261,6 +331,7 @@ export function Mirage() {
               sources: args.sources,
               preview: previewRect,
               slots,
+              clip,
               radii: {
                 card: args.cardRadius,
                 preview: previewRadius,
@@ -280,6 +351,21 @@ export function Mirage() {
                 cardRadius = getComputedStyle(thumb).borderRadius || cardRadius;
               }
             }
+            // The board's edge fades, measured at landing scale, for the
+            // overlay to mirror above the clones — only the sides the strip's
+            // scroll position will actually light (same thresholds as the
+            // board's own edge measurement).
+            const row = stageEl.querySelector<HTMLElement>('.mir-board__row');
+            const fades: { side: 'left' | 'right'; rect: DOMRect }[] = [];
+            if (row) {
+              const maxScroll = row.scrollWidth - row.clientWidth;
+              for (const side of ['left', 'right'] as const) {
+                const on =
+                  side === 'left' ? row.scrollLeft > 4 : row.scrollLeft < maxScroll - 4;
+                const el = stageEl.querySelector<HTMLElement>(`.mir-board__fade--${side}`);
+                if (on && el) fades.push({ side, rect: el.getBoundingClientRect() });
+              }
+            }
             flyCamera();
             const overlay = await flightOut({
               order,
@@ -289,6 +375,8 @@ export function Mirage() {
               videoFrame: args.videoFrame,
               targets,
               radii: { card: cardRadius, preview: args.previewRadius, slot: args.slotRadius },
+              fades,
+              clip,
             });
             finish(overlay);
           }
@@ -370,14 +458,18 @@ export function Mirage() {
     travel(2, 'in', focusOf(el));
   };
 
-  const insertScene = (afterIndex: number, prompt?: string) => {
-    const inserted = makeInsertedScene(`inserted-${Date.now()}`, prompt);
+  /** Insert a BLANK scene — the corkboard opens it straight in its edit
+   *  posture (the card is the prompt box), so it spawns ready, not cooking:
+   *  the render only starts when the ✓ commits (editScene's recook). */
+  const insertScene = (afterIndex: number): string => {
+    const inserted = makeBlankScene(`inserted-${Date.now()}`);
     setScenes((list) => {
       const next = [...list];
       next.splice(afterIndex + 1, 0, inserted);
       return next.map((s, i) => ({ ...s, num: i + 1 }));
     });
-    mat.cook(inserted.id);
+    mat.spawnReady(inserted.id);
+    return inserted.id;
   };
 
   const editScene = (id: string, patch: ScenePatch, opts?: { recook?: boolean }) => {
@@ -483,8 +575,9 @@ export function Mirage() {
             <div className="mir-chatlog">
               <p className="mir-chatlog__user">{PROMPT_TEXT}</p>
               <p className="mir-chatlog__assistant">
-                I’m setting up a warm, handheld kitchen scene for Olivia and Blake, figuring out
-                how to make the dialogue feel unscripted.
+                I split your take into 12 scenes and detected two people — Evelyn and Emily. I’m
+                aligning the script lanes to the transcript and reading camera states off the
+                footage now.
               </p>
               <p className="mir-chatlog__status">
                 <span className="mir-chatlog__spinner" aria-hidden />
@@ -502,6 +595,10 @@ export function Mirage() {
       <div className="mir-editor__canvas">
         <Corkboard
                 scenes={scenes}
+                videoCast={videoCast}
+                onAddAvatar={(id) =>
+                  setAddedAvatars((cur) => (cur.includes(id) ? cur : [...cur, id]))
+                }
                 spawnedIds={mat.spawnedIds}
                 readyMap={mat.readyMap}
                 insertMode={INSERT_MODE}

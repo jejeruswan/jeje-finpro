@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Plus, User, X } from '@phosphor-icons/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AVATARS,
   castOf,
@@ -36,24 +37,30 @@ const parseTimecode = (v: string): number | null => {
  */
 export function SceneCard({
   scene,
+  videoCast,
   cooking,
   playing = false,
   editing = false,
+  fresh = false,
   startSec,
   onOpen,
-  onBeginEdit,
   onEndEdit,
   onEdit,
   registerEl,
 }: {
   scene: Scene;
+  /** The video's cast — the only avatars this scene's editor can add. */
+  videoCast: AvatarId[];
   cooking: boolean;
   playing?: boolean;
   editing?: boolean;
+  /** A just-inserted, never-committed scene: the duration/time fields seed
+   *  EMPTY (not from the blank scene's default), and the ✓ always recooks —
+   *  the render only starts once the card has been filled in. */
+  fresh?: boolean;
   /** The scene's derived start time — the badge value. */
   startSec: number;
   onOpen: (el: HTMLElement) => void;
-  onBeginEdit: () => void;
   onEndEdit: () => void;
   /** Apply a patch; `recook` marks the render stale. */
   onEdit: (patch: ScenePatch, opts?: { recook?: boolean }) => void;
@@ -66,8 +73,8 @@ export function SceneCard({
   const [draftSummary, setDraftSummary] = useState(scene.summary);
   const [draftDuration, setDraftDuration] = useState(scene.durationSec);
   const [draftCast, setDraftCast] = useState<CastMember[]>(scene.cast);
-  const [durStr, setDurStr] = useState(String(scene.durationSec));
-  const [endStr, setEndStr] = useState(formatTimecode(startSec + scene.durationSec));
+  const [durStr, setDurStr] = useState(fresh ? '' : String(scene.durationSec));
+  const [endStr, setEndStr] = useState(fresh ? '' : formatTimecode(startSec + scene.durationSec));
 
   /* The edit face scrolls as a whole (no inner textarea scroll): the summary
      box grows with its content, and a shadow above the confirm row says
@@ -114,8 +121,8 @@ export function SceneCard({
     setDraftSummary(scene.summary);
     setDraftDuration(scene.durationSec);
     setDraftCast(scene.cast);
-    setDurStr(String(scene.durationSec));
-    setEndStr(formatTimecode(startSec + scene.durationSec));
+    setDurStr(fresh ? '' : String(scene.durationSec));
+    setEndStr(fresh ? '' : formatTimecode(startSec + scene.durationSec));
     // seed only on OPEN — while editing, the drafts are the source of truth
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -133,6 +140,21 @@ export function SceneCard({
 
   const commit = () => {
     if (!dirty) return;
+    if (fresh) {
+      // First commit of an inserted card: everything lands at once and the
+      // render starts NOW — the card flips to its view face and cooks.
+      onEdit(
+        {
+          title: draftTitle.trim() || 'New scene',
+          summary: draftSummary.trim(),
+          durationSec: draftDuration,
+          cast: draftCast,
+        },
+        { recook: true },
+      );
+      onEndEdit();
+      return;
+    }
     const patch: ScenePatch = {};
     if (draftTitle.trim() && draftTitle.trim() !== scene.title) patch.title = draftTitle.trim();
     if (draftSummary.trim() && draftSummary.trim() !== scene.summary) patch.summary = draftSummary.trim();
@@ -156,37 +178,54 @@ export function SceneCard({
     setDraftCast(cast);
   };
 
-  const availableAvatars = (Object.keys(AVATARS) as AvatarId[]).filter(
-    (id) => !draftCast.some((m) => m.id === id),
-  );
+  /** Only the VIDEO's avatars are addable here — bringing a new library
+   *  avatar into the video happens at the board meta's +, not per scene. */
+  const availableAvatars = videoCast.filter((id) => !draftCast.some((m) => m.id === id));
 
-  const chip = (m: CastMember, interactive: boolean) => (
-    <button
-      key={m.id}
-      type="button"
-      className={`mir-cast ${m.provenance === 'detected' ? 'mir-cast--detected' : ''}`}
-      title={
-        m.provenance === 'detected'
-          ? `${m.name} — detected in your footage (unclaimed)`
-          : `${m.name} — Captions avatar`
-      }
-      aria-label={m.name}
-      tabIndex={interactive ? 0 : -1}
-      onClick={(e) => {
-        if (!interactive) return;
-        e.stopPropagation();
-        setMenu((cur) => (cur?.kind === 'member' && cur.id === m.id ? null : { kind: 'member', id: m.id }));
-      }}
-    >
-      {m.chip ? <img src={m.chip} alt="" /> : <User size={13} weight="bold" />}
-    </button>
-  );
+  const chip = (m: CastMember, interactive: boolean) => {
+    const face = (
+      <button
+        key={interactive ? undefined : m.id}
+        type="button"
+        className={`mir-cast ${m.provenance === 'detected' ? 'mir-cast--detected' : ''}`}
+        aria-label={m.name}
+        tabIndex={interactive ? 0 : -1}
+        onClick={(e) => {
+          if (!interactive) return;
+          e.stopPropagation();
+          setMenu((cur) => (cur?.kind === 'member' && cur.id === m.id ? null : { kind: 'member', id: m.id }));
+        }}
+      >
+        {m.chip ? <img src={m.chip} alt="" /> : <User size={13} weight="bold" />}
+      </button>
+    );
+    if (!interactive) return face;
+    // Editing: each chip wears a small ✕ — remove without opening the popover.
+    return (
+      <span className="mir-cast-wrap" key={m.id}>
+        {face}
+        <button
+          type="button"
+          className="mir-cast-remove"
+          aria-label={`Remove ${m.name} from this scene`}
+          onClick={(e) => {
+            e.stopPropagation();
+            patchCast(draftCast.filter((x) => x.id !== m.id));
+          }}
+        >
+          <X size={8} weight="bold" />
+        </button>
+      </span>
+    );
+  };
 
   /* --- View posture ----------------------------------------------------------- */
   if (!editing) {
     return (
       <div
-        className={`mir-card ${cooking ? 'mir-card--cooking' : ''} ${turning ? 'mir-card--turn' : ''}`}
+        className={`mir-card ${cooking ? 'mir-card--cooking' : ''} ${turning ? 'mir-card--turn' : ''} ${
+          playing ? 'mir-card--playing' : ''
+        }`}
         ref={registerEl}
         onClick={(e) => onOpen(e.currentTarget)}
         role="button"
@@ -197,7 +236,6 @@ export function SceneCard({
         <div className="mir-card__top">
           <div className="mir-card__thumb">
             <img src={scene.thumb} alt="" draggable={false} />
-            {cooking && <span className="mir-card__cooking-dot" aria-label="Rendering" />}
             {playing && (
               <span
                 className="mir-card__progress"
@@ -212,21 +250,9 @@ export function SceneCard({
 
         <div className="mir-card__bottom">
           <span className="mir-card__badge">{formatTimecode(startSec)}</span>
-          <span className="mir-card__cast">
-            {/* The pile's + (718-136729) is a shortcut straight into editing. */}
-            <button
-              type="button"
-              className="mir-cast mir-cast--plus"
-              aria-label="Edit this scene's cast"
-              onClick={(e) => {
-                e.stopPropagation();
-                onBeginEdit();
-              }}
-            >
-              <Plus size={12} weight="bold" />
-            </button>
-            {scene.cast.map((m) => chip(m, false))}
-          </span>
+          {/* Idle cards just SHOW the cast — all editing enters through the
+              hover pencil, so the pile carries no + of its own. */}
+          <span className="mir-card__cast">{scene.cast.map((m) => chip(m, false))}</span>
         </div>
       </div>
     );
@@ -236,17 +262,23 @@ export function SceneCard({
   const member = menu?.kind === 'member' ? draftCast.find((m) => m.id === menu.id) : null;
 
   /* Cast popovers (attn-menu style), anchored under the avatars row. They edit
-     the DRAFT; the check commits. */
+     the DRAFT; the check commits. Exits mirror the entrance keyframes, and
+     keying by member lets switching popovers cross-fade instead of cutting. */
+  const MENU_EXIT = {
+    opacity: 0,
+    y: -2,
+    scale: 0.98,
+    transition: { duration: 0.12, ease: 'easeOut' as const },
+  };
   const castMenus = (
-    <>
+    <AnimatePresence>
       {member && (
-        <div className="mir-cast-menu" onClick={(e) => e.stopPropagation()}>
-          <p className="mir-cast-menu__head">
-            {member.name}
-            <span className="mir-cast-menu__tag" data-provenance={member.provenance}>
-              {member.provenance}
-            </span>
-          </p>
+        <motion.div
+          key={`member-${member.id}`}
+          className="mir-cast-menu"
+          exit={MENU_EXIT}
+          onClick={(e) => e.stopPropagation()}
+        >
           {member.provenance === 'detected' ? (
             <>
               <button
@@ -294,15 +326,16 @@ export function SceneCard({
           >
             Remove from scene
           </button>
-        </div>
+        </motion.div>
       )}
 
       {menu?.kind === 'add' && (
-        <div className="mir-cast-menu" onClick={(e) => e.stopPropagation()}>
-          <p className="mir-cast-menu__head">Add to scene</p>
-          {availableAvatars.length === 0 && (
-            <p className="mir-cast-menu__empty">Every avatar is already in this scene.</p>
-          )}
+        <motion.div
+          key="add"
+          className="mir-cast-menu"
+          exit={MENU_EXIT}
+          onClick={(e) => e.stopPropagation()}
+        >
           {availableAvatars.map((id) => (
             <button
               type="button"
@@ -314,9 +347,9 @@ export function SceneCard({
               {AVATARS[id].name}
             </button>
           ))}
-        </div>
+        </motion.div>
       )}
-    </>
+    </AnimatePresence>
   );
 
   return (
@@ -348,10 +381,13 @@ export function SceneCard({
           <span className="mir-edit__label">Avatars</span>
           <div className="mir-edit__castwrap">
             <div className="mir-edit__cast">
+              {/* Dead once the whole video cast is in the scene — new avatars
+                  join the VIDEO at the board meta's +, not here. */}
               <button
                 type="button"
                 className="mir-cast mir-cast--plus"
                 aria-label="Add an avatar to this scene"
+                disabled={availableAvatars.length === 0}
                 onClick={(e) => {
                   e.stopPropagation();
                   setMenu((cur) => (cur?.kind === 'add' ? null : { kind: 'add' }));
@@ -428,6 +464,9 @@ export function SceneCard({
             className="mir-edit__field"
             value={draftTitle}
             aria-labelledby={`title-${scene.id}`}
+            /* A fresh card opens ready to type — and with focus inside the
+               card, Escape reaches its discard handler immediately. */
+            autoFocus={fresh}
             onChange={(e) => setDraftTitle(e.target.value)}
           />
         </div>

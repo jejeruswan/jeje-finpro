@@ -28,8 +28,47 @@ const EASE_LEAD = 'cubic-bezier(0.1, 0.24, 0, 1)';
 const STAGGER_MS = 24;
 const STAGGER_MAX_STEPS = 4;
 
+/* The hero lands on a spring: a damped oscillator sampled into a linear()
+   easing — ~1.5% overshoot peaking around 60% in, fully settled by landing.
+   ζ (damping) sets the overshoot, ω (rad/s) how quickly it settles. */
+const SPRING = (() => {
+  const ζ = 0.8;
+  const ω = 13.5;
+  const T = MORPH_MS / 1000;
+  const ωd = ω * Math.sqrt(1 - ζ * ζ);
+  const N = 24;
+  const pts: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const t = (i / N) * T;
+    const x = 1 - Math.exp(-ζ * ω * t) * (Math.cos(ωd * t) + ((ζ * ω) / ωd) * Math.sin(ωd * t));
+    pts.push(x.toFixed(4));
+  }
+  return `linear(${pts.join(', ')}, 1)`;
+})();
+
 export const staggerFor = (i: number, heroIdx: number) =>
   Math.min(Math.abs(i - heroIdx), STAGGER_MAX_STEPS) * STAGGER_MS;
+
+/** The flight's viewport: body-level and fixed, but CLIPPED to the given rect
+ *  (the zoom stage inside the editor window's rounded panel) — a clone that
+ *  travels to a half-scrolled edge card is cut off by the panel exactly like
+ *  the card it becomes, instead of spilling onto the window frame. Only the
+ *  bottom corners round: the top edge sits mid-panel, under the fixed header,
+ *  where the panel's sides run straight. */
+export type FlightClip = { rect: DOMRect; radius: string };
+
+function mkOverlay(clip?: FlightClip): HTMLElement {
+  const overlay = document.createElement('div');
+  overlay.className = 'mir-flight';
+  if (clip) {
+    const r = clip.rect;
+    overlay.style.clipPath = `inset(${r.top}px ${window.innerWidth - r.right}px ${
+      window.innerHeight - r.bottom
+    }px ${r.left}px round 0 0 ${clip.radius} ${clip.radius})`;
+  }
+  document.body.appendChild(overlay);
+  return overlay;
+}
 
 function mkClone(overlay: HTMLElement, src: string, r: DOMRect, radius: string): HTMLElement {
   const d = document.createElement('div');
@@ -56,6 +95,9 @@ function fly(
     fade?: 'in' | 'out';
     delay?: number;
     duration?: number;
+    /** Hero flights land on the spring (both axes — no arc, a straight
+     *  confident dolly with a settle). */
+    spring?: boolean;
   } = {},
 ): Promise<unknown> {
   const frame = (r: DOMRect, radius: string, opacity: number) => ({
@@ -71,12 +113,12 @@ function fly(
       frame(from, opts.radius?.[0] ?? el.style.borderRadius, opts.fade === 'in' ? 0 : 1),
       frame(to, opts.radius?.[1] ?? el.style.borderRadius, opts.fade === 'out' ? 0 : 1),
     ],
-    { ...timing, easing: EASE },
+    { ...timing, easing: opts.spring ? SPRING : EASE },
   );
   // Vertical travel on its own (earlier) curve — the arc lives in the split.
   const rise = el.animate(
     [{ top: `${from.top}px` }, { top: `${to.top}px` }],
-    { ...timing, easing: EASE_LEAD },
+    { ...timing, easing: opts.spring ? SPRING : EASE_LEAD },
   );
   return Promise.all([anim.finished, rise.finished]).catch(() => undefined);
 }
@@ -97,10 +139,9 @@ export async function flightIn(args: {
   preview: DOMRect;
   slots: RectMap;
   radii: { card: string; preview: string; slot: string };
+  clip?: FlightClip;
 }): Promise<HTMLElement> {
-  const overlay = document.createElement('div');
-  overlay.className = 'mir-flight';
-  document.body.appendChild(overlay);
+  const overlay = mkOverlay(args.clip);
 
   const flights: Promise<unknown>[] = [];
   const heroIdx = args.order.findIndex((s) => s.id === args.selectedId);
@@ -116,7 +157,9 @@ export async function flightIn(args: {
       if (src) {
         const hero = mkClone(overlay, thumb, src, args.radii.card);
         hero.style.zIndex = '1';
-        flights.push(fly(hero, src, args.preview, { radius: [args.radii.card, args.radii.preview] }));
+        flights.push(
+          fly(hero, src, args.preview, { radius: [args.radii.card, args.radii.preview], spring: true }),
+        );
       }
       // Its strip slot is vacant — a duplicate rises from beneath the
       // preview's bottom edge to complete the sequence.
@@ -164,10 +207,24 @@ export async function flightOut(args: {
   /** Card-thumbnail rects measured on the mounted L1 (visible cards only). */
   targets: RectMap;
   radii: { card: string; preview: string; slot: string };
+  /** The board's edge fades at landing scale, mirrored INTO the overlay above
+   *  every clone — an edge-bound thumb shrinks UNDER the fade exactly like the
+   *  card it becomes, instead of riding over it and getting abruptly overlaid
+   *  at landing. Only the sides that will actually be lit. */
+  fades?: { side: 'left' | 'right'; rect: DOMRect }[];
+  clip?: FlightClip;
 }): Promise<HTMLElement> {
-  const overlay = document.createElement('div');
-  overlay.className = 'mir-flight';
-  document.body.appendChild(overlay);
+  const overlay = mkOverlay(args.clip);
+
+  for (const f of args.fades ?? []) {
+    const el = document.createElement('div');
+    el.className = `mir-flight__fade mir-flight__fade--${f.side}`;
+    el.style.left = `${f.rect.left}px`;
+    el.style.top = `${f.rect.top}px`;
+    el.style.width = `${f.rect.width}px`;
+    el.style.height = `${f.rect.height}px`;
+    overlay.appendChild(el);
+  }
 
   const flights: Promise<unknown>[] = [];
   const heroIdx = args.order.findIndex((s) => s.id === args.selectedId);
@@ -196,7 +253,12 @@ export async function flightOut(args: {
             { duration: MORPH_MS, easing: 'ease-out', fill: 'forwards' },
           );
         }
-        flights.push(fly(hero, args.preview, target, { radius: [args.radii.preview, args.radii.card] }));
+        flights.push(
+          fly(hero, args.preview, target, {
+            radius: [args.radii.preview, args.radii.card],
+            spring: true,
+          }),
+        );
       }
       // …while the duplicate that filled its slot slides down out of view.
       if (slot) {

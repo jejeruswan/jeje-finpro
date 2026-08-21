@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Eye, VideoCamera } from '@phosphor-icons/react';
+import { AreaFlower, AttentionEye, CameraLens, CursorAddBadge } from '../../../assets/icons';
 import { CLIP_H, LANE_H, cameraStateName, laneTop, markLabel } from '../data';
 import type {
   AttentionRun,
@@ -87,7 +87,6 @@ function AttentionGlyph({
       data-selected={selected || undefined}
       aria-pressed={selected}
       aria-label={`${kind} — ${markLabel(run.mark)} from ${run.start.toFixed(1)}s`}
-      title={`${markLabel(run.mark)} · drag to move`}
       style={{ left: pad + run.mark.t * pxPerSec, cursor: pinned ? 'pointer' : 'ew-resize' }}
       onClick={(e) => {
         e.stopPropagation();
@@ -95,7 +94,7 @@ function AttentionGlyph({
       }}
       {...(pinned ? {} : drag.dragProps('move', run.mark.t))}
     >
-      {kind === 'area' ? '✼' : ''}
+      {kind === 'area' ? <AreaFlower /> : null}
     </button>
   );
 }
@@ -236,7 +235,6 @@ function ShotClip({
       style={{ left: pad + shot.start * pxPerSec, width: (shot.end - shot.start) * pxPerSec }}
       onClick={() => onSelect()}
       onDoubleClick={() => scene.splitShot(shot.id, (shot.start + shot.end) / 2)}
-      title={`${cameraStateName(shot)} · double-click to split`}
     >
       {selected && (
         <Handle edge="start" place="in" locked={!hasPrev} drag={drag.dragProps('start', shot.start)} />
@@ -362,6 +360,116 @@ function Script({
   );
 }
 
+/* --- Adding a line or a reaction -------------------------------------------------
+   Hovering EMPTY lane space — script or interaction — grows a green ⊕ beside
+   the pointer (Figma 758-167324); a click there spawns a DRAFT: a selected,
+   ghost-bearing clip that exists only in Animator's state. A script draft
+   holds a quiet "Type" ghost until Enter commits the line; a reaction draft
+   wears a ghost gesture and commits the moment the panel's grid picks one. */
+
+/** A script line being written: it lives in Animator's state, not the scene —
+ *  nothing exists on the timeline until the panel commits it. */
+export type ScriptDraft = { rowId: string; start: number; text: string };
+
+/** A reaction being placed — no gesture yet; picking one commits it, and the
+ *  one under the pointer in the panel's grid previews as the chip's ghost.
+ *  `triggerId` rides along when the draft was opened FROM a script line, so
+ *  the committed reaction answers it (a lane click spawns standalone). */
+export type ReactionDraft = {
+  rowId: string;
+  start: number;
+  preview?: string | null;
+  triggerId?: string;
+};
+
+/** The draft clip: selected posture (white frame, end caps) holding one quiet
+ *  ghost — "<speaker> says…", the same voice as the panel's own placeholder.
+ *  It stays exactly this while the panel is written into; the words only land
+ *  on the track when Enter commits them. */
+function DraftClip({ draft, speaker, pad, pxPerSec }: { draft: ScriptDraft; speaker: string; pad: number; pxPerSec: number }) {
+  return (
+    <div
+      className="anim-clip anim-clip--script anim-clip--draft"
+      data-selected
+      style={{ left: pad + draft.start * pxPerSec }}
+      aria-label="New line — type in the Script panel, Enter to add"
+    >
+      <Handle edge="start" place="out" />
+      <span className="anim-clip__body anim-clip__body--words">
+        <span className="anim-draft__ghost">{speaker} says…</span>
+      </span>
+      <Handle edge="end" place="out" />
+    </div>
+  );
+}
+
+/** The reaction draft chip: the default 2s window in the selected posture,
+ *  with a ghost 👀 where the gesture will land — the panel's grid decides. */
+function DraftReaction({ draft, pad, pxPerSec }: { draft: ReactionDraft; pad: number; pxPerSec: number }) {
+  return (
+    <div
+      className="anim-clip anim-clip--emoji anim-clip--draft"
+      data-selected
+      style={{ left: pad + draft.start * pxPerSec, width: Math.max(32, 2 * pxPerSec) }}
+      aria-label="New reaction — pick a gesture in the panel to add"
+    >
+      <Handle edge="start" place="out" />
+      <span className="anim-clip__body anim-clip__body--emoji">
+        <span className="anim-draft__ghost-emoji">{draft.preview ?? '👀'}</span>
+      </span>
+      <Handle edge="end" place="out" />
+    </div>
+  );
+}
+
+/** One row's lane, listening for the add gesture on its empty space. The
+ *  clips (and any draft) sit on top and are filtered out by hit-testing, so
+ *  the badge and the spawn click only ever belong to bare lane. */
+function AddableLane({
+  kind,
+  children,
+  pad,
+  pxPerSec,
+  onSpawn,
+}: {
+  kind: 'script' | 'interaction';
+  children: React.ReactNode;
+  pad: number;
+  pxPerSec: number;
+  onSpawn: (seconds: number) => void;
+}) {
+  const [spot, setSpot] = useState<{ x: number; y: number } | null>(null);
+  const overEmpty = (e: React.MouseEvent) =>
+    !(e.target instanceof Element && e.target.closest('.anim-clip'));
+
+  return (
+    <div className={`anim-lane anim-lane--${kind}`}>
+      <div
+        className="anim-lane-abs"
+        onPointerMove={(e) => {
+          if (!overEmpty(e)) return setSpot(null);
+          const rect = e.currentTarget.getBoundingClientRect();
+          setSpot({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        }}
+        onPointerLeave={() => setSpot(null)}
+        onClick={(e) => {
+          if (!overEmpty(e)) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          onSpawn((e.clientX - rect.left - pad) / pxPerSec);
+        }}
+      >
+        {children}
+        {/* Rides the pointer's lower-right, where the OS cursor bundle puts it. */}
+        {spot && (
+          <span className="anim-addbadge" style={{ left: spot.x + 8, top: spot.y + 10 }} aria-hidden>
+            <CursorAddBadge size={18} />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* --- Interactions ------------------------------------------------------------- */
 
 function Reaction({
@@ -415,7 +523,15 @@ function Reaction({
    that TRIGGERS it — the actor and the speaker are usually different people, and
    that relationship is the thing a traditional timeline has no place to record. */
 
-type Connector = { id: string; x: number; top: number; height: number; interactionId: string };
+type Connector = {
+  id: string;
+  x: number;
+  top: number;
+  height: number;
+  interactionId: string;
+  /** Which end lands on the script clip — the only end that wears a dot. */
+  scriptEnd: 'top' | 'bottom';
+};
 
 function connectors(
   rows: AvatarRow[],
@@ -444,10 +560,14 @@ function connectors(
         top: Math.min(a, b),
         height: Math.abs(b - a),
         interactionId: it.id,
+        scriptEnd: from < to ? 'bottom' : 'top',
       });
     });
   });
-  return out;
+  // Tallest first, so a line that passes THROUGH other lanes (Emily answering
+  // Evelyn's line) paints behind the short local one it shares an x with —
+  // the two read as one chained line, not two stacked ones.
+  return out.sort((a, b) => b.height - a.height);
 }
 
 /* --- The stack ---------------------------------------------------------- */
@@ -470,6 +590,10 @@ export function Tracks({
   onCreateMark,
   attnTrackOn,
   onToggleAttnTrack,
+  draft,
+  onSpawnDraft,
+  reactionDraft,
+  onSpawnReactionDraft,
   time,
   pad,
   pxPerSec,
@@ -486,6 +610,14 @@ export function Tracks({
    *  playback without selecting runs one by one. */
   attnTrackOn: boolean;
   onToggleAttnTrack: () => void;
+  /** The line being written, if any — rendered in its row's script lane. */
+  draft: ScriptDraft | null;
+  /** Empty script-lane space was clicked at `seconds` on row `rowId`. */
+  onSpawnDraft: (rowId: string, seconds: number) => void;
+  /** The reaction being placed, if any — rendered in its row's reaction lane. */
+  reactionDraft: ReactionDraft | null;
+  /** Empty reaction-lane space was clicked at `seconds` on row `rowId`. */
+  onSpawnReactionDraft: (rowId: string, seconds: number) => void;
   time: number;
   pad: number;
   pxPerSec: number;
@@ -521,10 +653,11 @@ export function Tracks({
               data-on={attnTrackOn || undefined}
               aria-pressed={attnTrackOn}
               aria-label={attnTrackOn ? 'Hide attention on the video' : 'Show attention on the video'}
-              title={attnTrackOn ? 'Hide attention overlays' : 'Show attention overlays while playing'}
               onClick={onToggleAttnTrack}
             >
-              <Eye size={18} weight={attnTrackOn ? 'fill' : 'regular'} />
+              {/* Same glyph as the Attention inspector's title — the rail and
+                  the panel introduce themselves with one face. */}
+              <AttentionEye size={18} />
             </button>
           </div>
           <div className="anim-layer__lanes" style={{ height: LANE_H }}>
@@ -546,7 +679,8 @@ export function Tracks({
         {/* 2 — shot styles */}
         <div className="anim-layer">
           <div className="anim-rail">
-            <VideoCamera size={18} className="anim-rail__icon" aria-label="Camera state" />
+            {/* The Camera State inspector's own lens, in the rail's quiet gray. */}
+            <CameraLens size={18} className="anim-rail__icon" aria-label="Camera state" />
           </div>
           <div className="anim-layer__lanes" style={{ height: LANE_H }}>
             <div className="anim-lane-abs">
@@ -574,37 +708,42 @@ export function Tracks({
               <img className="anim-avatar" src={row.avatar} alt={row.name} />
             </div>
             <div className="anim-layer__lanes" style={{ height: LANE_H * 2 }}>
-              <div className="anim-lane anim-lane--script">
-                <div className="anim-lane-abs">
-                  {row.scripts.map((clip) => (
-                    <Script
-                      key={clip.id}
-                      clip={clip}
-                      pad={pad}
-                      time={time}
-                      pxPerSec={pxPerSec}
-                      selected={selection?.kind === 'script' && selection.id === clip.id}
-                      onSelect={() => onSelectClip('script', clip.id)}
-                      scene={scene}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="anim-lane anim-lane--interaction">
-                <div className="anim-lane-abs">
-                  {row.interactions.map((it) => (
-                    <Reaction
-                      key={it.id}
-                      it={it}
-                      pad={pad}
-                      pxPerSec={pxPerSec}
-                      selected={selection?.kind === 'interaction' && selection.id === it.id}
-                      onSelect={() => onSelectClip('interaction', it.id)}
-                      scene={scene}
-                    />
-                  ))}
-                </div>
-              </div>
+              <AddableLane kind="script" pad={pad} pxPerSec={pxPerSec} onSpawn={(s) => onSpawnDraft(row.id, s)}>
+                {row.scripts.map((clip) => (
+                  <Script
+                    key={clip.id}
+                    clip={clip}
+                    pad={pad}
+                    time={time}
+                    pxPerSec={pxPerSec}
+                    selected={selection?.kind === 'script' && selection.id === clip.id}
+                    onSelect={() => onSelectClip('script', clip.id)}
+                    scene={scene}
+                  />
+                ))}
+                {draft?.rowId === row.id && <DraftClip draft={draft} speaker={row.name} pad={pad} pxPerSec={pxPerSec} />}
+              </AddableLane>
+              <AddableLane
+                kind="interaction"
+                pad={pad}
+                pxPerSec={pxPerSec}
+                onSpawn={(s) => onSpawnReactionDraft(row.id, s)}
+              >
+                {row.interactions.map((it) => (
+                  <Reaction
+                    key={it.id}
+                    it={it}
+                    pad={pad}
+                    pxPerSec={pxPerSec}
+                    selected={selection?.kind === 'interaction' && selection.id === it.id}
+                    onSelect={() => onSelectClip('interaction', it.id)}
+                    scene={scene}
+                  />
+                ))}
+                {reactionDraft?.rowId === row.id && (
+                  <DraftReaction draft={reactionDraft} pad={pad} pxPerSec={pxPerSec} />
+                )}
+              </AddableLane>
             </div>
           </div>
         ))}
@@ -620,6 +759,7 @@ export function Tracks({
                 (selection?.kind === 'interaction' && selection.id === l.interactionId) || undefined
               }
               aria-label="Reaction trigger"
+              data-script-end={l.scriptEnd}
               style={{ left: l.x, top: l.top, height: l.height }}
               onClick={() => onSelectClip('interaction', l.interactionId)}
             />

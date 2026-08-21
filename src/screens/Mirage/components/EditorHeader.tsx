@@ -1,9 +1,4 @@
-import {
-  ArrowClockwise,
-  ArrowCounterClockwise,
-  DownloadSimple,
-  Sidebar,
-} from '@phosphor-icons/react';
+import { DownloadTray, RedoArrow, SidebarPanel, UndoArrow } from '../../../assets/icons';
 import { IconButton } from '../../../ui/IconButton';
 import { Button } from '../../../ui/Button';
 
@@ -39,19 +34,19 @@ export function EditorHeader({
           aria-pressed={chatOpen}
           onClick={onToggleChat}
         >
-          <Sidebar size={20} />
+          <SidebarPanel size={20} />
         </IconButton>
         <span className="mir-editor__title">{labels[0]}</span>
       </div>
 
       <div className="mir-editor__header-right">
         <IconButton size={40} aria-label="Undo">
-          <ArrowCounterClockwise size={20} />
+          <UndoArrow size={20} />
         </IconButton>
         <IconButton size={40} aria-label="Redo">
-          <ArrowClockwise size={20} />
+          <RedoArrow size={20} />
         </IconButton>
-        <Button variant="primary" leftIcon={<DownloadSimple size={20} weight="bold" />}>
+        <Button variant="primary" leftIcon={<DownloadTray size={20} />}>
           Download video
         </Button>
       </div>

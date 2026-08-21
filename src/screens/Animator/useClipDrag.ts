@@ -48,6 +48,9 @@ export function useClipDrag(
       if (!d) return;
       e.stopPropagation();
       if (Math.abs(e.clientX - d.x0) > 3) moved.current = true;
+      // A press's sub-3px wobble is not an edit: committing it would nudge the
+      // clip (and rerender the take) on what the hand meant as a click.
+      if (!moved.current) return;
       commit(d.kind, d.base + (e.clientX - d.x0) / pxRef.current);
     },
     onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {

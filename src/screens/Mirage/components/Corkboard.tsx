@@ -1,12 +1,14 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ListBullets, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ViewfinderReticle } from '../../../assets/icons';
 import {
+  AVATARS,
   boardMeta,
   formatTimecode,
   PLAYBACK_SCENE_MS,
   sceneStarts,
+  type AvatarId,
   type Scene,
   type ScenePatch,
 } from '../data';
@@ -14,6 +16,13 @@ import { SceneCard } from './SceneCard';
 
 /** How reordered/inserted cards glide to their new slots. */
 const SLOT_TRANSITION = { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const };
+/** A deleted card's death: shrink-fade in place (popped out of the layout
+ *  flow, so the neighbors close ranks over it at the same time). */
+const SLOT_EXIT = {
+  opacity: 0,
+  scale: 0.86,
+  transition: { duration: 0.22, ease: [0.2, 0, 0, 1] as const },
+};
 
 /**
  * What sits under the viewfinder reticle: either a scene card (focus mode) or
@@ -36,7 +45,7 @@ type ReticleState =
  *    locked under the reticle
  *  - a "Scenes" pill that opens the jump-to drawer (Raw 06)
  *  - hover gaps between cards that grow a floating + insertion node (Raw 07)
- *  - a scrubber pill (the "3 — 8" readout): hovering expands a micro-strip of
+ *  - a scrubber pill (the "3/8" readout): hovering expands a micro-strip of
  *    scene thumbnails, and clicking/dragging jumps the strip so that scene
  *    locks under the reticle
  * Cards materialize sequentially while the project generates; the row is live
@@ -44,6 +53,8 @@ type ReticleState =
  */
 export function Corkboard({
   scenes,
+  videoCast,
+  onAddAvatar,
   spawnedIds,
   readyMap,
   insertMode = 'reticle',
@@ -59,6 +70,10 @@ export function Corkboard({
   registerReticle,
 }: {
   scenes: Scene[];
+  /** The video's cast — the avatars scenes can pull from (see Mirage). */
+  videoCast: AvatarId[];
+  /** Add a library avatar to the video's cast (the meta row's +). */
+  onAddAvatar: (id: AvatarId) => void;
   spawnedIds: string[];
   readyMap: Record<string, boolean>;
   /**
@@ -72,7 +87,9 @@ export function Corkboard({
    *  from the frame canvas, so the zoom-out lands on the scene it left. */
   initialCenterId?: string | null;
   onOpenScene: (id: string, el: HTMLElement) => void;
-  onInsertScene: (afterIndex: number, prompt?: string) => void;
+  /** Insert a BLANK scene after this index and return its id — the new card
+   *  opens directly in its edit posture (see startInsert). */
+  onInsertScene: (afterIndex: number) => string;
   /** Apply an edit to a scene; `recook` marks its render stale. */
   onEditScene: (id: string, patch: ScenePatch, opts?: { recook?: boolean }) => void;
   /** Remove a scene from the sequence (the trash under a hovered card). */
@@ -96,10 +113,12 @@ export function Corkboard({
   // It sits in the gap under the reticle by default and jumps to whichever gap
   // the cursor hovers (hover wins); it is never shown twice.
   const [hoverGap, setHoverGap] = useState<number | null>(null);
-  const [insertAt, setInsertAt] = useState<number | null>(null);
-  /** Board-relative x the prompt box anchors to; null = board center. */
-  const [insertAnchorX, setInsertAnchorX] = useState<number | null>(null);
-  const [insertText, setInsertText] = useState('');
+  /** A just-inserted, never-committed scene: it mounts straight into the edit
+   *  posture (the card IS the prompt box), and backing out deletes it. The ref
+   *  mirrors the state so commit/discard — which fire back to back in one
+   *  event — read the current value, not a stale closure. */
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const draftIdRef = useRef<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [playIdx, setPlayIdx] = useState(0);
   // Playbar: collapsed to the bare index until hovered; `hoverThumb` is the
@@ -166,31 +185,39 @@ export function Corkboard({
   // Render-synced mirror: while an overlay (prompt box / drawer) is open the
   // pointer belongs to it, so cursor-following pauses.
   const overlayRef = useRef(false);
-  overlayRef.current = insertAt != null || drawerOpen;
+  overlayRef.current = drawerOpen;
 
   const visible = scenes.filter((s) => spawnedIds.includes(s.id));
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const reticleRef = useRef(reticle);
   reticleRef.current = reticle;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  /** True while the last strip movement came from the user's wheel — the only
+   *  scrolls the magnet below is allowed to finish. */
+  const wheelScrolled = useRef(false);
 
   // Derived timing: every badge / drawer time / meta readout recomputes from
   // the durations, so retiming or reordering one scene ripples everywhere.
   const starts = sceneStarts(scenes);
   const startById = new Map(scenes.map((s, i) => [s.id, starts[i]]));
 
-  // The project's cast face-pile (first three members with a face chip).
-  const castPile = (() => {
-    const seen = new Set<string>();
-    const pile: { id: string; chip: string }[] = [];
-    for (const s of scenes)
-      for (const m of s.cast)
-        if (m.chip && !seen.has(m.id)) {
-          seen.add(m.id);
-          pile.push({ id: m.id, chip: m.chip });
-        }
-    return pile.slice(0, 3);
-  })();
+  // The video's cast face-pile — everyone in the video, addable via the +.
+  const castPile = videoCast.map((id) => ({ id, chip: AVATARS[id].chip }));
+  const libraryLeft = (Object.keys(AVATARS) as AvatarId[]).filter(
+    (id) => !videoCast.includes(id),
+  );
+  const [castMenuOpen, setCastMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!castMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest('.mir-board__meta')) return;
+      setCastMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onDown);
+    return () => window.removeEventListener('pointerdown', onDown);
+  }, [castMenuOpen]);
 
   // Which card is in its in-place edit posture (one at a time).
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -211,6 +238,8 @@ export function Corkboard({
     pointerId: number;
   } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
+  draggingIdRef.current = draggingId;
   const [dropX, setDropX] = useState<number | null>(null);
   const dropBefore = useRef<string | null | undefined>(undefined);
   const suppressClick = useRef(false);
@@ -285,6 +314,22 @@ export function Corkboard({
     if (dropBefore.current !== undefined) onReorderScene(d.id, dropBefore.current);
     dropBefore.current = undefined;
   };
+
+  /* --- Centering --------------------------------------------------------------- */
+
+  const centerOnVisible = useCallback((i: number, behavior: ScrollBehavior = 'smooth') => {
+    const row = rowRef.current;
+    const el = cardEls.current[visibleRef.current[i]?.id ?? ''];
+    if (!row || !el) return;
+    // A programmatic glide, not a wheel coast — the magnet must not chase it.
+    wheelScrolled.current = false;
+    // Rect delta rather than offsetLeft: the cards wrapper is a positioned
+    // ancestor, so offsetLeft is measured from IT and drops the row's run-in.
+    const rowRect = row.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const delta = r.left + r.width / 2 - (rowRect.left + rowRect.width / 2);
+    row.scrollTo({ left: row.scrollLeft + delta, behavior });
+  }, []);
 
   /* --- Reticle tracking --------------------------------------------------------
      Resolve what sits under the board's center from live card geometry (so the
@@ -406,11 +451,44 @@ export function Corkboard({
       schedule();
     };
 
+    /* The magnet: a wheel coast that dies with a gap under the crosshair gets
+       finished — the nearest card glides the last few px under the reticle.
+       Wheel-origin only, and only while the crosshair is home (cursor outside
+       the band): the deliberate gap-rest paths — hovering a gap with the
+       cursor, clicking a gap to glide it in — are untouched, so insertion
+       mode still works exactly as designed. Fires at 300ms of quiet, before
+       the morph dwell (~340ms post-scroll) can arm and flash the (+). */
+    let magnetT = 0;
+    const magnet = () => {
+      if (!wheelScrolled.current || freeRef.current || overlayRef.current) return;
+      if (editingIdRef.current || draggingIdRef.current || playingRef.current) return;
+      const cur = reticleRef.current;
+      if (cur.mode !== 'gap') return;
+      const list = visibleRef.current;
+      const rowRect = row.getBoundingClientRect();
+      const center = rowRect.left + rowRect.width / 2;
+      let best = -1;
+      let bestD = Infinity;
+      for (const i of [cur.afterVisible, cur.afterVisible + 1]) {
+        const el = cardEls.current[list[i]?.id ?? ''];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const d = Math.abs(r.left + r.width / 2 - center);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best >= 0) centerOnVisible(best);
+    };
+
     // Scroll lockout: stamp activity so the dwell timer below refuses to arm
     // the morph while the strip is (or just was) in motion.
     const onScroll = () => {
       lastScroll.current = Date.now();
       schedule();
+      window.clearTimeout(magnetT);
+      magnetT = window.setTimeout(magnet, 300);
     };
 
     schedule();
@@ -422,13 +500,14 @@ export function Corkboard({
     window.addEventListener('resize', schedule);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(magnetT);
       row.removeEventListener('scroll', onScroll);
       board?.removeEventListener('pointermove', onPointerMove);
       board?.removeEventListener('pointerleave', release);
       row.removeEventListener('transitionend', schedule);
       window.removeEventListener('resize', schedule);
     };
-  }, [measure, releaseFollow]);
+  }, [measure, releaseFollow, centerOnVisible]);
 
   // New cards landing (materialization / insertion) reshapes the strip.
   useEffect(() => {
@@ -451,24 +530,11 @@ export function Corkboard({
       if (editingIdRef.current) return;
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // already horizontal
       e.preventDefault();
+      wheelScrolled.current = true;
       rowRef.current?.scrollBy({ left: e.deltaY });
     };
     board.addEventListener('wheel', onWheel, { passive: false });
     return () => board.removeEventListener('wheel', onWheel);
-  }, []);
-
-  /* --- Centering ------------------------------------------------------------- */
-
-  const centerOnVisible = useCallback((i: number, behavior: ScrollBehavior = 'smooth') => {
-    const row = rowRef.current;
-    const el = cardEls.current[visibleRef.current[i]?.id ?? ''];
-    if (!row || !el) return;
-    // Rect delta rather than offsetLeft: the cards wrapper is a positioned
-    // ancestor, so offsetLeft is measured from IT and drops the row's run-in.
-    const rowRect = row.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    const delta = r.left + r.width / 2 - (rowRect.left + rowRect.width / 2);
-    row.scrollTo({ left: row.scrollLeft + delta, behavior });
   }, []);
 
   // Arriving back from the frame canvas: land with the scene we left already
@@ -581,16 +647,14 @@ export function Corkboard({
   const insertAfterScene = (visIdx: number) => scenes.indexOf(visible[visIdx]);
 
   // The crosshair morphs only once the dwell timer has armed it — and never
-  // while a card is being edited or dragged, or an overlay (drawer / prompt
-  // box) owns the pointer. Reticle-only mode: any gap under it qualifies.
-  // Unified mode: only while no OTHER gap is hovered — a hovered gap summons
-  // the node to itself (same node, same prompt).
+  // while a card is being edited or dragged, or the drawer owns the pointer.
+  // Reticle-only mode: any gap under it qualifies. Unified mode: only while
+  // no OTHER gap is hovered — a hovered gap summons the node to itself.
   const reticleMorphs =
     morphArmed &&
     !editingId &&
     !draggingId &&
     !drawerOpen &&
-    insertAt == null &&
     reticleGapIndex != null &&
     (!unified || hoverGap == null || hoverGap === reticleGapIndex);
   const nodeGap =
@@ -600,53 +664,97 @@ export function Corkboard({
   const glideGapToReticle = (gapEl: HTMLElement) => {
     const row = rowRef.current;
     if (!row) return;
+    // Deliberate travel INTO a gap — the magnet must let it rest there.
+    wheelScrolled.current = false;
     row.scrollTo({
       left: gapEl.offsetLeft + gapEl.offsetWidth / 2 - row.clientWidth / 2,
       behavior: 'smooth',
     });
   };
 
-  const openInsertAt = (visIdx: number, anchorEl?: HTMLElement) => {
-    // The prompt box takes the pointer: OS cursor back, crosshair heads home.
+  /** Insert here: a blank card lands in the gap, already in its edit posture —
+   *  the form is the prompt box. The host returns the new scene's id. */
+  const startInsert = (visIdx: number) => {
+    // One editor at a time: while a card (draft or not) is open, the unified
+    // gap nodes must not spawn a second draft under it.
+    if (editingIdRef.current) return;
+    // The form takes the pointer: OS cursor back, crosshair heads home.
     releaseFollow();
-    if (anchorEl && boardRef.current) {
-      const b = boardRef.current.getBoundingClientRect();
-      const r = anchorEl.getBoundingClientRect();
-      const x = r.left + r.width / 2 - b.left;
-      setInsertAnchorX(Math.min(Math.max(x, 200), b.width - 200));
-    } else {
-      setInsertAnchorX(null); // board center — the reticle's own spot
-    }
-    setInsertAt(insertAfterScene(visIdx));
+    const id = onInsertScene(insertAfterScene(visIdx));
+    draftIdRef.current = id;
+    setDraftId(id);
+    setEditingId(id);
   };
 
-  const closeInsert = () => {
-    setInsertAt(null);
-    setInsertAnchorX(null);
-  };
-
-  const submitInsert = () => {
-    if (insertAt == null) return;
-    onInsertScene(insertAt, insertText.trim() || undefined);
-    closeInsert();
-    setInsertText('');
-  };
+  /* Once the fresh card has mounted, glide it under the reticle. */
+  useEffect(() => {
+    if (!draftId) return;
+    const raf = requestAnimationFrame(() => {
+      const i = visibleRef.current.findIndex((s) => s.id === draftId);
+      if (i >= 0) centerOnVisible(i);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [draftId, centerOnVisible]);
 
   return (
     <div
       className={`mir-board ${editingId ? 'mir-board--editing' : ''} ${
         draggingId ? 'mir-board--dragging' : ''
-      } ${initialCenterId ? 'mir-board--return' : ''}`}
+      } ${initialCenterId ? 'mir-board--return' : ''} ${playing ? 'mir-board--playing' : ''}`}
       ref={boardRef}
     >
-      {/* Collection meta (L104/L107): count · runtime · the project's cast
-          face-pile, centered above the strip. */}
-      <div className="mir-board__meta" aria-hidden>
+      {/* Collection meta (L104/L107): count · runtime · the video's cast
+          face-pile, centered above the strip — with a + to bring more library
+          avatars into the video (they then become addable to scenes). */}
+      <div className="mir-board__meta">
         <span className="mir-board__meta-text">{boardMeta(scenes)} · </span>
         <span className="mir-board__meta-pile">
           {castPile.map((m) => (
             <img key={m.id} src={m.chip} alt="" />
           ))}
+          {/* The + is the pile's last "member": a dashed ghost circle stacked
+              onto the faces — the next avatar goes here. */}
+          <span className="mir-board__meta-addwrap">
+          <button
+            type="button"
+            className="mir-cast mir-cast--plus mir-board__meta-add"
+            aria-label="Add an avatar to this video"
+            aria-expanded={castMenuOpen}
+            disabled={libraryLeft.length === 0}
+            onClick={() => setCastMenuOpen((v) => !v)}
+          >
+            <Plus size={13} weight="bold" />
+          </button>
+          <AnimatePresence>
+            {castMenuOpen && (
+              <motion.div
+                key="video-cast"
+                className="mir-cast-menu mir-board__meta-menu"
+                exit={{
+                  opacity: 0,
+                  y: -2,
+                  scale: 0.98,
+                  transition: { duration: 0.12, ease: 'easeOut' },
+                }}
+              >
+                {libraryLeft.map((id) => (
+                  <button
+                    type="button"
+                    className="mir-cast-menu__row"
+                    key={id}
+                    onClick={() => {
+                      onAddAvatar(id);
+                      setCastMenuOpen(false);
+                    }}
+                  >
+                    <img className="mir-cast-menu__chip" src={AVATARS[id].chip} alt="" />
+                    {AVATARS[id].name}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          </span>
         </span>
       </div>
 
@@ -672,9 +780,22 @@ export function Corkboard({
       <div className="mir-board__row" ref={rowRef}>
         <div className="mir-board__cards">
           {dropX != null && <span className="mir-dropline" style={{ left: dropX }} aria-hidden />}
-          {visible.map((s, i) => (
-            <Fragment key={s.id}>
-              <motion.div layout transition={SLOT_TRANSITION} className="mir-slot">
+          {/* Each slot owns its card AND its trailing gap, so a deleted scene
+              takes its gap along as it shrinks away (popLayout lets the
+              neighbors glide closed while the exit plays in place). */}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {visible.map((s, i) => (
+              <motion.div
+                key={s.id}
+                /* position, not full layout: a spawning neighbor grows this
+                   slot (its trailing gap appears), and a size-animating FLIP
+                   renders that as a scale — visibly squashing the card for a
+                   few frames. Position glides; size snaps. */
+                layout="position"
+                transition={SLOT_TRANSITION}
+                exit={SLOT_EXIT}
+                className="mir-slot"
+              >
                 <div
                   className={`mir-slot__drag ${
                     draggingId === s.id ? 'mir-slot__drag--lifted' : ''
@@ -686,16 +807,32 @@ export function Corkboard({
                 >
                   <SceneCard
                     scene={s}
+                    videoCast={videoCast}
                     cooking={!readyMap[s.id]}
                     playing={playing && i === playIdx}
                     editing={editingId === s.id}
+                    fresh={draftId === s.id}
                     startSec={startById.get(s.id) ?? 0}
                     onOpen={(el) => {
                       if (!suppressClick.current && editingId !== s.id) onOpenScene(s.id, el);
                     }}
-                    onBeginEdit={() => setEditingId(s.id)}
-                    onEndEdit={() => setEditingId(null)}
-                    onEdit={(patch, opts) => onEditScene(s.id, patch, opts)}
+                    onEndEdit={() => {
+                      setEditingId(null);
+                      // Backing out of a never-committed insert removes it —
+                      // the ✓ path clears the ref (in onEdit) before this runs.
+                      if (draftIdRef.current === s.id) {
+                        draftIdRef.current = null;
+                        setDraftId(null);
+                        onDeleteScene(s.id);
+                      }
+                    }}
+                    onEdit={(patch, opts) => {
+                      if (draftIdRef.current === s.id) {
+                        draftIdRef.current = null;
+                        setDraftId(null);
+                      }
+                      onEditScene(s.id, patch, opts);
+                    }}
                     registerEl={(el) => {
                       cardEls.current[s.id] = el;
                       registerCard(s.id, el);
@@ -733,8 +870,7 @@ export function Corkboard({
                     </div>
                   )}
                 </div>
-              </motion.div>
-              {i < visible.length - 1 && (
+                {i < visible.length - 1 && (
                 <div
                   className={`mir-gap ${unified ? '' : 'mir-gap--glide'}`}
                   onMouseEnter={() => {
@@ -766,16 +902,17 @@ export function Corkboard({
                       tabIndex={nodeGap === i ? 0 : -1}
                       onClick={(e) => {
                         e.stopPropagation();
-                        openInsertAt(i, e.currentTarget);
+                        startInsert(i);
                       }}
                     >
                       <Plus size={20} weight="bold" />
                     </button>
                   )}
                 </div>
-              )}
-            </Fragment>
-          ))}
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       </div>
       <div
@@ -805,52 +942,19 @@ export function Corkboard({
         aria-hidden={!reticleMorphs || undefined}
         tabIndex={reticleMorphs ? 0 : -1}
         onClick={() => {
-          if (reticleMorphs && reticleGapIndex != null) openInsertAt(reticleGapIndex);
+          if (reticleMorphs && reticleGapIndex != null) startInsert(reticleGapIndex);
         }}
       >
         <ViewfinderReticle size={22} className="mir-reticle__cross" />
         <Plus size={20} weight="bold" className="mir-reticle__plus" />
       </button>
 
-      {/* Prompt box the reticle's (+) opens: generate a scene at this spot. */}
-      {insertAt != null && (
-        <>
-          <div className="mir-drawer-scrim" onClick={closeInsert} />
-          <div
-            className="mir-insert"
-            style={insertAnchorX != null ? { left: insertAnchorX } : undefined}
-          >
-            <p className="mir-insert__title">New scene · position {insertAt + 2}</p>
-            <input
-              className="mir-insert__input"
-              autoFocus
-              value={insertText}
-              placeholder="Describe the scene to generate…"
-              onChange={(e) => setInsertText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submitInsert();
-                if (e.key === 'Escape') closeInsert();
-              }}
-            />
-            <div className="mir-insert__actions">
-              <button type="button" className="mir-insert__cancel" onClick={closeInsert}>
-                Cancel
-              </button>
-              <button type="button" className="mir-insert__go" onClick={submitInsert}>
-                Generate scene
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
       {/* --- Sequence navigator (Raw-20/21 playbar, consolidated) --------------
-          THE home for everything collection-level: the scene-list toggle, the
-          active index, the filmstrip mini-map (on hover) and the total
-          runtime. Idle: just the quiet list glyph + index. Hovering the pill
-          expands the filmstrip; hovering a thumb previews its index in
-          text/tertiary and grays out the other thumbs. Click/drag jumps the
-          strip so that scene locks under the reticle. */}
+          The active index, plus the filmstrip mini-map on hover. Idle: just
+          the quiet index. Hovering the pill expands the filmstrip; hovering a
+          thumb previews its index in text/tertiary and grays out the other
+          thumbs. Click/drag jumps the strip so that scene locks under the
+          reticle. */}
       <div
         className={`mir-scrub ${scrubOpen ? 'mir-scrub--open' : ''}`}
         onMouseEnter={scrubEnter}
@@ -859,7 +963,7 @@ export function Corkboard({
         <span
           className={`mir-scrub__label ${hoverThumb != null ? 'mir-scrub__label--preview' : ''}`}
         >
-          {(hoverThumb ?? scrubIdx) + 1} — {scenes.length}
+          {(hoverThumb ?? scrubIdx) + 1}/{scenes.length}
         </span>
         <div
           className="mir-scrub__strip"
@@ -897,15 +1001,18 @@ export function Corkboard({
             <span className="mir-scrub__pending">+{scenes.length - visible.length}</span>
           )}
         </div>
-        <span className="mir-scrub__total">
-          {formatTimecode(scenes.reduce((t, s) => t + s.durationSec, 0))}
-        </span>
       </div>
 
-      {drawerOpen && (
-        <>
-          <div className="mir-drawer-scrim" onClick={() => setDrawerOpen(false)} />
-          <div className="mir-drawer">
+      {drawerOpen && <div className="mir-drawer-scrim" onClick={() => setDrawerOpen(false)} />}
+      <AnimatePresence>
+        {drawerOpen && (
+          <motion.div
+            key="drawer"
+            className="mir-drawer"
+            /* Backs out the way it slid in; y carries the CSS centering offset
+               because motion's inline transform replaces the stylesheet's. */
+            exit={{ opacity: 0, x: -20, y: '-52%', transition: { duration: 0.16, ease: 'easeOut' } }}
+          >
             <div className="mir-drawer__list">
               {visible.map((s, i) => (
                 <button
@@ -922,9 +1029,9 @@ export function Corkboard({
                 </button>
               ))}
             </div>
-          </div>
-        </>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

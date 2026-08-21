@@ -133,7 +133,6 @@ export function AttentionPanel({
                 role="radio"
                 aria-checked={!virgin && mark.kind === k.id}
                 data-picked={(!virgin && mark.kind === k.id) || undefined}
-                title={k.hint}
                 onClick={() => pickKind(k.id)}
               >
                 <span className="attn-seg__box">
@@ -151,7 +150,6 @@ export function AttentionPanel({
               type="button"
               className="attn-select"
               aria-label="Change what the eye is on"
-              title="Change what the eye is on"
               onClick={() => {
                 setPickerOpen(false);
                 setUnfolded(true);
@@ -216,7 +214,7 @@ export function AttentionPanel({
                     aria-label="Area label"
                     onChange={(e) => onSetArea(e.target.value)}
                   />
-                  <IconButton size={24} variant="ghost" aria-label="Redraw the area" title="Redraw the area" onClick={onRedrawArea}>
+                  <IconButton size={24} variant="ghost" aria-label="Redraw the area" onClick={onRedrawArea}>
                     <PencilSimple size={14} />
                   </IconButton>
                 </span>

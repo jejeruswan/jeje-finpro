@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import {
-  DEFAULT_PX_PER_SEC,
-  MAX_PX_PER_SEC,
-  MIN_PX_PER_SEC,
-  RAIL,
-  SCENE_DURATION,
-} from './data';
+import { DEFAULT_PX_PER_SEC, RAIL, SCENE_DURATION } from './data';
 
 /**
  * The timeline's single source of truth: where we are in the take, how many
@@ -26,7 +20,9 @@ import {
  * useVideoSync). This hook only holds the state the video and the UI share.
  */
 export function useTimeline(duration = SCENE_DURATION) {
-  const [pxPerSec, setPxPerSec] = useState(DEFAULT_PX_PER_SEC);
+  /* Zoom is gone from the prototype — a second is always worth the design's
+     spacing. Kept as a variable so the seconds-anchored math reads unchanged. */
+  const pxPerSec = DEFAULT_PX_PER_SEC;
   const [time, setTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -124,23 +120,6 @@ export function useTimeline(duration = SCENE_DURATION) {
     setTime(duration);
   }, [duration]);
 
-  /* --- Zoom: the playhead is centred, so zoom re-derives around it for free --- */
-
-  const zoomBy = useCallback((factor: number) => {
-    setPxPerSec((cur) => {
-      const next = Math.min(MAX_PX_PER_SEC, Math.max(MIN_PX_PER_SEC, cur * factor));
-      pxRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const zoomToFit = useCallback(() => {
-    if (!viewport) return;
-    const next = Math.min(MAX_PX_PER_SEC, Math.max(MIN_PX_PER_SEC, (viewport - 24) / duration));
-    pxRef.current = next;
-    setPxPerSec(next);
-  }, [viewport, duration]);
-
   /** Total scrollable content: rail + lead-in + the take + lead-out. The rail
    *  is INSIDE the scroller (sticky), so it counts toward clientWidth — leave
    *  it out and the maximum scroll comes up exactly RAIL short, stopping the
@@ -164,8 +143,6 @@ export function useTimeline(duration = SCENE_DURATION) {
     toggle,
     pause,
     stop,
-    zoomBy,
-    zoomToFit,
   };
 }
 

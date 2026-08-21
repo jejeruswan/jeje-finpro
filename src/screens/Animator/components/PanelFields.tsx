@@ -84,10 +84,18 @@ export function TimeField({
 export function TextField({
   value,
   ariaLabel,
+  placeholder,
+  rows = 3,
+  allowEmpty = false,
   onCommit,
 }: {
   value: string;
   ariaLabel: string;
+  placeholder?: string;
+  rows?: number;
+  /** Let a cleared field commit as "" — for optional notes, where emptying the
+   *  box means removing the note rather than abandoning the edit. */
+  allowEmpty?: boolean;
   onCommit: (text: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -96,11 +104,12 @@ export function TextField({
     <textarea
       className="prop-panel__textarea"
       aria-label={ariaLabel}
-      rows={3}
+      placeholder={placeholder}
+      rows={rows}
       value={draft ?? value}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        if (draft !== null && draft.trim()) onCommit(draft);
+        if (draft !== null && (allowEmpty || draft.trim())) onCommit(draft);
         setDraft(null);
       }}
       onKeyDown={(e) => {

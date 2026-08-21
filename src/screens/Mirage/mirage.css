@@ -256,7 +256,9 @@
 }
 .mir-prompt__field {
   padding: var(--space-8) var(--space-8) 36px;
-  cursor: text;
+  /* Default arrow, not the I-beam: the field is a click-to-configure prop, and
+     an I-beam hovering beside the fake caret read as a double cursor. */
+  cursor: default;
   min-height: 68px;
 }
 .mir-prompt__text,
@@ -275,7 +277,10 @@
   margin-right: 2px;
   vertical-align: text-bottom;
   background: var(--color-primary);
-  animation: mir-caret 1.1s steps(2, start) infinite;
+  /* step-end holds each keyframe VALUE: fully on for half the beat, fully off
+     for the other half. An eased/stepped fade renders in-between opacities —
+     a lighter-blue ghost state that read as a double blink. */
+  animation: mir-caret 1.1s step-end infinite;
 }
 @keyframes mir-caret {
   50% { opacity: 0; }
@@ -381,8 +386,10 @@
   cursor: pointer;
   transition: background 0.15s ease;
 }
-.mir-mode:hover,
-.mir-mode--active { background: var(--color-button-tertiary-hover); }
+.mir-mode:hover { background: var(--color-button-tertiary-hover); }
+/* Suggestion prompts, not modes: nothing sits "active", and the glyphs run a
+   step quieter than their labels (the design's #7e8486 on #eef4f6). */
+.mir-mode svg { color: var(--color-text-tertiary); }
 
 /* ============================================================================
    Editor chrome shared by Level 1 + Level 2 (Raw 04 / Raw 08)
@@ -555,7 +562,32 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  pointer-events: none;
+}
+/* The video-cast +: the pile's last "member" — a dashed ghost circle stacked
+   onto the faces (the next avatar goes here), with the avatar-library menu
+   dropping from it. */
+.mir-board__meta-addwrap {
+  position: relative;
+  display: inline-flex;
+  margin-left: -6px; /* same overlap rhythm as the face chips */
+}
+.mir-cast.mir-board__meta-add {
+  width: 30px;
+  height: 30px;
+  background: var(--color-bg-primary);
+  border: 1.5px dashed rgba(255, 255, 255, 0.3);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.mir-cast.mir-board__meta-add:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.55);
+  color: var(--color-text-primary);
+}
+.mir-board__meta-menu {
+  top: calc(100% + 6px);
+  left: 50%;
+  margin-left: -107px; /* centered under the +: half the menu's 214px */
 }
 .mir-board__meta-text {
   font-size: var(--fs-18);
@@ -671,19 +703,27 @@
   top: 50%;
   transform: translateY(-52%);
   width: 211px;
-  height: 422px;
+  /* The design's shadow overshoots the 422px cards ~13px on both ends. */
+  height: 448px;
   pointer-events: none;
   z-index: 10;
   opacity: 0;
   transition: opacity 0.25s ease;
 }
+/* The gradient is STACKED twice, exactly like the design frame layers it
+   (L107 · 736-143535): one pass reads as a wash that exiting cards shine
+   straight through; the doubled alpha (1-(1-a)²) actually swallows them. */
 .mir-board__fade--right {
   right: 0;
-  background: linear-gradient(to right, rgba(20, 21, 21, 0), var(--color-bg-primary));
+  background:
+    linear-gradient(to right, rgba(20, 21, 21, 0), var(--color-bg-primary)),
+    linear-gradient(to right, rgba(20, 21, 21, 0), var(--color-bg-primary));
 }
 .mir-board__fade--left {
   left: 0;
-  background: linear-gradient(to left, rgba(20, 21, 21, 0), var(--color-bg-primary));
+  background:
+    linear-gradient(to left, rgba(20, 21, 21, 0), var(--color-bg-primary)),
+    linear-gradient(to left, rgba(20, 21, 21, 0), var(--color-bg-primary));
 }
 .mir-board__fade--on { opacity: 1; }
 /* --- Viewfinder reticle (Raw 05's "middle cursor") ----------------------------
@@ -765,75 +805,6 @@
 }
 
 /* --- Reticle insertion prompt box ------------------------------------------- */
-.mir-insert {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 44px);
-  transform: translateX(-50%);
-  z-index: 30;
-  width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
-  padding: var(--space-12);
-  background: var(--color-bg-secondary);
-  border: 0.5px solid var(--color-hairline);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-  animation: mir-insert-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes mir-insert-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.97); }
-}
-.mir-insert__title {
-  margin: 0;
-  font-size: var(--fs-13);
-  font-weight: 500;
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-secondary);
-}
-.mir-insert__input {
-  width: 100%;
-  padding: 11px var(--space-12);
-  background: rgba(255, 255, 255, 0.08);
-  border: 0.5px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-family: var(--font-brand);
-  font-size: var(--fs-13);
-  letter-spacing: var(--tracking-body);
-}
-.mir-insert__input::placeholder { color: var(--color-text-tertiary); }
-.mir-insert__input:focus { outline: none; border-color: var(--color-primary); }
-.mir-insert__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
-}
-.mir-insert__cancel,
-.mir-insert__go {
-  height: 32px;
-  padding: 0 var(--space-12);
-  border-radius: var(--radius-md);
-  font-family: var(--font-brand);
-  font-size: var(--fs-13);
-  font-weight: 500;
-  letter-spacing: var(--tracking-body);
-  cursor: pointer;
-}
-.mir-insert__cancel {
-  background: none;
-  border: 0.5px solid var(--color-hairline);
-  color: var(--color-text-secondary);
-}
-.mir-insert__cancel:hover { background: var(--color-button-tertiary-hover); }
-.mir-insert__go {
-  background: var(--color-primary);
-  border: none;
-  color: var(--color-text-on-primary);
-}
-.mir-insert__go:hover { background: var(--color-primary-hover); }
-
 /* --- Playbar: floating index readout + filmstrip mini-map (Raw-20/21) --------
    Inspect values from the Figma component: 14/9 padding, 12px label↔strip gap,
    8px thumb gap, 32.27×24.31 thumbs at 4px radius. */
@@ -860,13 +831,13 @@
   backdrop-filter: blur(12px);
 }
 .mir-scrub__label {
-  /* Wide enough for the largest expected readout ("10 — 12") and immune to
+  /* Wide enough for the largest expected readout ("10/12") and immune to
      digit-count changes, so the centered pill never shifts while scrubbing. */
-  min-width: 72px;
+  min-width: 56px;
   flex-shrink: 0;
   text-align: center;
   color: var(--color-text-primary);
-  font-size: var(--fs-18);
+  font-size: var(--fs-16);
   font-weight: 400;
   line-height: 24px;
   letter-spacing: var(--tracking-heading);
@@ -894,7 +865,7 @@
 }
 .mir-scrub--open .mir-scrub__strip {
   max-width: 360px;
-  margin-left: var(--space-12);
+  margin-left: var(--space-8);
   opacity: 1;
 }
 .mir-scrub__thumb {
@@ -941,25 +912,6 @@
   letter-spacing: 0.02em;
 }
 /* Total runtime — revealed with the filmstrip, collapsing with it at idle. */
-.mir-scrub__total {
-  flex: 0 0 auto;
-  max-width: 0;
-  margin-left: 0;
-  overflow: hidden;
-  opacity: 0;
-  font-size: var(--fs-13);
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transition: max-width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease,
-    margin-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.mir-scrub--open .mir-scrub__total {
-  max-width: 60px;
-  margin-left: var(--space-10);
-  opacity: 1;
-}
 
 /* --- Scene card ------------------------------------------------------------------ */
 .mir-card {
@@ -975,7 +927,12 @@
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   animation: mir-card-in 0.55s cubic-bezier(0.18, 0.9, 0.3, 1.1) both;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, opacity 0.45s ease;
+}
+/* Playback is a MODE: the playing card holds the light while the rest of the
+   sequence falls back — and everyone eases back up when it ends. */
+.mir-board--playing .mir-card:not(.mir-card--playing) {
+  opacity: 0.45;
 }
 /* Hover: the card stays put and steps up half a surface tone (#1d1f20 →
    #2a2c2d) — the quiet lift, not the full #333437 hover jump. */
@@ -1033,16 +990,6 @@
   filter: blur(26px);
   transform: scale(1.12);
 }
-.mir-card__cooking-dot {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  animation: mir-pulse 1.2s ease-in-out infinite;
-}
 /* Playback sweep: fills along the thumbnail's bottom edge for the scene's
    dwell time while the strip auto-scrolls to keep this card under the reticle. */
 .mir-card__progress {
@@ -1060,9 +1007,6 @@
 @keyframes mir-progress {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
-}
-@keyframes mir-pulse {
-  50% { opacity: 0.3; }
 }
 .mir-card__title {
   margin: 0;
@@ -1093,8 +1037,9 @@
   height: 20px;
   padding: 0 var(--space-6);
   border-radius: 4px;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
+  /* The quiet gray stamp (506-93558), not the primary cyan. */
+  background: var(--color-surface-hover);
+  color: #f5f9fa;
   font-size: var(--fs-11);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -1184,32 +1129,6 @@
 @keyframes mir-menu-in {
   from { opacity: 0; transform: translateY(-2px) scale(0.98); }
 }
-.mir-cast-menu__head {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding: 0 var(--space-4) var(--space-4);
-  font-size: var(--fs-12);
-  font-weight: 500;
-  letter-spacing: var(--tracking-body);
-  color: var(--color-text-primary);
-}
-.mir-cast-menu__tag {
-  padding: 0 var(--space-4);
-  border-radius: 4px;
-  font-size: 10px;
-  line-height: 14px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-text-secondary);
-}
-.mir-cast-menu__tag[data-provenance='generated'] {
-  background: rgba(0, 208, 255, 0.15);
-  color: var(--color-primary);
-}
 .mir-cast-menu__row {
   display: flex;
   align-items: center;
@@ -1236,12 +1155,6 @@
   height: 18px;
   border-radius: 50%;
   object-fit: cover;
-}
-.mir-cast-menu__empty {
-  margin: 0;
-  padding: var(--space-4) var(--space-8);
-  font-size: var(--fs-12);
-  color: var(--color-text-tertiary);
 }
 
 /* --- Edit posture: the card is the form ------------------------------------------
@@ -1342,7 +1255,7 @@
 input.mir-edit__field:focus,
 textarea.mir-edit__field:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: var(--color-hairline-focus);
 }
 .mir-edit__area {
   resize: none;
@@ -1400,19 +1313,50 @@ textarea.mir-edit__field:focus {
   gap: var(--space-8);
 }
 .mir-edit__cast .mir-cast {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   margin-left: 0 !important;
   cursor: pointer !important;
   transition: transform 0.15s ease;
 }
 .mir-edit__cast .mir-cast:hover { transform: scale(1.1); }
+/* Chips in the edit row wrap so the ✕ badge can ride the corner. */
+.mir-cast-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.mir-cast-remove {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: 50%;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.mir-cast-remove:hover { background: var(--color-surface-hover); }
 .mir-cast--plus {
   background: var(--color-white);
   color: var(--color-gray-900);
   border: 2px solid var(--color-bg-secondary);
   cursor: pointer !important;
 }
+/* Exhausted: the whole video cast is already here (or the library is empty). */
+.mir-cast--plus:disabled {
+  opacity: 0.35;
+  cursor: default !important;
+}
+.mir-edit__cast .mir-cast--plus:disabled:hover { transform: none; }
 
 /* Commit: quiet until something changed, then the primary cyan — dark glyph,
    since the lit button is brighter than anything around it. */
@@ -1469,7 +1413,7 @@ textarea.mir-edit__field:focus {
 .mir-card__title-input:focus,
 .mir-card__summary-input:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-hairline-focus);
 }
 /* Duration scrub: the badge becomes a draggable number (1s per 8px). */
 .mir-card__badge--scrub {
@@ -1481,7 +1425,13 @@ textarea.mir-edit__field:focus {
 }
 
 /* --- Drag-to-reorder ------------------------------------------------------------- */
-.mir-slot { flex: 0 0 auto; }
+/* A slot is a card plus its trailing gap, so a deleted scene exits with its
+   gap in tow while the neighbors close ranks. */
+.mir-slot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
 .mir-slot__drag {
   touch-action: pan-x;
   position: relative; /* anchors the hover actions under the card */
@@ -1492,19 +1442,30 @@ textarea.mir-edit__field:focus {
    card to the icons never breaks the :hover that reveals them. */
 .mir-card-actions {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   right: 13px;
   z-index: 3;
   display: flex;
   gap: 14px;
-  padding-bottom: 16px;
-  opacity: 0;
+  padding-top: 12px;
   pointer-events: none;
-  transition: opacity 0.15s ease;
 }
 .mir-slot__drag:hover .mir-card-actions {
-  opacity: 1;
   pointer-events: auto;
+}
+/* The buttons ARRIVE — a small rise with a beat between the two — but leave
+   together at once (no delay outside :hover). */
+.mir-card-actions__btn {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.16s ease, transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+.mir-slot__drag:hover .mir-card-actions__btn {
+  opacity: 1;
+  transform: none;
+}
+.mir-slot__drag:hover .mir-card-actions__btn + .mir-card-actions__btn {
+  transition-delay: 40ms;
 }
 .mir-board--dragging .mir-card-actions {
   opacity: 0 !important;
@@ -1614,11 +1575,14 @@ textarea.mir-edit__field:focus {
   from { opacity: 0; transform: translateY(-52%) translateX(-24px); }
 }
 .mir-drawer__list {
-  padding: 32px 40px 0 40px; /* L101: content indents 40, rows start at the card band */
+  /* 26.5 + the rows' 5.5px pad = L101's 32px run-in (content indents 40). */
+  padding: 26.5px 40px 0 40px;
   background: var(--color-bg-primary);
   display: flex;
   flex-direction: column;
-  gap: 11px; /* L101 row rhythm: 24px lines on a 35px pitch */
+  /* No flex gap: the 11px row rhythm lives INSIDE the rows (5.5px pads), so
+     the spotlight never has a dead strip to fall through between rows —
+     gliding down the list hands hover straight from row to row. */
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1634,9 +1598,9 @@ textarea.mir-edit__field:focus {
   display: flex;
   align-items: center;
   gap: var(--space-10);
-  padding: 0 var(--space-8) 0 0;
+  /* Half the 11px rhythm above and below: 24px lines on a 35px pitch. */
+  padding: 5.5px var(--space-8);
   margin-left: calc(-1 * var(--space-8));
-  padding-left: var(--space-8);
   border: none;
   border-radius: var(--radius-sm);
   background: none;
@@ -1749,6 +1713,27 @@ textarea.mir-edit__field:focus {
   background: var(--color-bg-secondary);
   will-change: left, top, width, height;
 }
+/* The corkboard's edge fades, mirrored into the OUT flight's overlay: they sit
+   above every clone (which run z1–3), so edge-bound thumbs shrink home under
+   them. The board's own fades hide during the morph (below), and return
+   exactly as the overlay crossfades away — identical pixels, invisible swap. */
+.mir-flight__fade {
+  position: absolute;
+  z-index: 10;
+}
+.mir-flight__fade--right {
+  background:
+    linear-gradient(to right, rgba(20, 21, 21, 0), var(--color-bg-primary)),
+    linear-gradient(to right, rgba(20, 21, 21, 0), var(--color-bg-primary));
+}
+.mir-flight__fade--left {
+  background:
+    linear-gradient(to left, rgba(20, 21, 21, 0), var(--color-bg-primary)),
+    linear-gradient(to left, rgba(20, 21, 21, 0), var(--color-bg-primary));
+}
+.mir-stage[data-morph='out'] .mir-board__fade {
+  opacity: 0 !important;
+}
 .mir-flight__clone img {
   width: 100%;
   height: 100%;
@@ -1765,10 +1750,8 @@ textarea.mir-edit__field:focus {
 /* While clones fly IN, the canvas's own shared elements wait unseen… */
 .mir-stage[data-morph] .anim-preview__video,
 .mir-stage[data-morph] .anim-hud,
-.mir-stage[data-morph] .anim-play,
-.mir-stage[data-morph] .anim-strip,
-.mir-stage[data-morph] .anim-strip-shade,
-.mir-stage[data-morph] .anim-strip__index {
+.mir-stage[data-morph] .anim-play--dock,
+.mir-stage[data-morph] .anim-strip-band {
   opacity: 0 !important;
 }
 /* …and the supporting chrome (tools, timeline) rises up UNDER the landing
@@ -1783,7 +1766,7 @@ textarea.mir-edit__field:focus {
 }
 /* What snaps on at landing gets a short ease instead (the strip itself stays
    a hard swap — its landed clones cover it pixel-for-pixel). */
-.mir-editor :is(.anim-hud, .anim-play, .anim-strip__index) {
+.mir-editor :is(.anim-hud, .anim-play--dock) {
   transition: opacity 0.2s ease;
 }
 /* The ghost corkboard's thumbnails empty out while their clones fly… */

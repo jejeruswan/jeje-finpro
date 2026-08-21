@@ -1,4 +1,4 @@
-import { ArrowCounterClockwise, ArrowClockwise, DownloadSimple } from '@phosphor-icons/react';
+import { DownloadTray, RedoArrow, UndoArrow } from '../../../assets/icons';
 import { IconButton } from '../../../ui/IconButton';
 import { Button } from '../../../ui/Button';
 
@@ -16,12 +16,12 @@ export function AppHeader({ title }: { title: string }) {
 
       <div className="anim-header__group">
         <IconButton size={40} aria-label="Undo">
-          <ArrowCounterClockwise size={20} />
+          <UndoArrow size={20} />
         </IconButton>
         <IconButton size={40} aria-label="Redo">
-          <ArrowClockwise size={20} />
+          <RedoArrow size={20} />
         </IconButton>
-        <Button variant="primary" leftIcon={<DownloadSimple size={20} weight="bold" />}>
+        <Button variant="primary" leftIcon={<DownloadTray size={20} />}>
           Download video
         </Button>
       </div>

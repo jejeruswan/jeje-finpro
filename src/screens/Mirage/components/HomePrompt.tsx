@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import {
-  ArrowRight,
-  CaretDown,
-  FolderSimplePlus,
-  House,
-  Lightbulb,
-  MagicWand,
-  Paperclip,
-  PencilSimpleLine,
-  Question,
-  Sidebar,
-  SquaresFour,
-  UserCircle,
-} from '@phosphor-icons/react';
+  ArrowRightThin,
+  AvatarsAdd,
+  ChevronDownSmall,
+  CreateTemplate,
+  EditBare,
+  FolderAdd,
+  HouseNav,
+  InfoRing,
+  PaperclipTilt,
+  SidebarPanel,
+  TipLamp,
+} from '../../../assets/icons';
 import { AVATARS, PROMPT_PLACEHOLDER, PROMPT_TEXT, SIDEBAR_PROJECTS } from '../data';
 
 /**
@@ -36,21 +35,21 @@ export function HomePrompt({ onCreate }: { onCreate: () => void }) {
             aria-expanded={sideOpen}
             onClick={() => setSideOpen(false)}
           >
-            <Sidebar size={20} />
+            <SidebarPanel size={20} />
           </button>
 
           <button type="button" className="mir-side__workspace">
             Mirage
-            <CaretDown size={14} />
+            <ChevronDownSmall size={16} />
           </button>
 
           <nav className="mir-side__nav">
             <button type="button" className="mir-side__item mir-side__item--active">
-              <House size={20} />
+              <HouseNav size={20} />
               Home
             </button>
             <button type="button" className="mir-side__item">
-              <FolderSimplePlus size={20} />
+              <FolderAdd size={20} />
               New folder
             </button>
           </nav>
@@ -74,7 +73,7 @@ export function HomePrompt({ onCreate }: { onCreate: () => void }) {
               5288 credits
             </button>
             <button type="button" className="mir-side__help" aria-label="Help">
-              <Question size={20} />
+              <InfoRing size={20} />
             </button>
           </div>
         </div>
@@ -91,7 +90,7 @@ export function HomePrompt({ onCreate }: { onCreate: () => void }) {
             aria-expanded={false}
             onClick={() => setSideOpen(true)}
           >
-            <Sidebar size={20} />
+            <SidebarPanel size={20} />
           </button>
         )}
         <div className="mir-home__content">
@@ -122,32 +121,20 @@ export function HomePrompt({ onCreate }: { onCreate: () => void }) {
             <div className="mir-prompt__actions">
               <div className="mir-prompt__pills">
                 <button type="button" className="mir-pill mir-pill--icon" aria-label="Attach">
-                  <Paperclip size={20} />
+                  <PaperclipTilt size={20} />
                 </button>
                 {configured ? (
-                  <>
-                    <button type="button" className="mir-pill mir-pill--tagged">
-                      <MagicWand size={20} />
-                      Nova
+                  (['evelyn', 'emily'] as const).map((id) => (
+                    <button type="button" className="mir-pill mir-pill--tagged mir-pill--avatar" key={id}>
+                      <img src={AVATARS[id].chip} alt="" width={30} height={30} />
+                      {AVATARS[id].name}
                     </button>
-                    {(['olivia', 'blake'] as const).map((id) => (
-                      <button type="button" className="mir-pill mir-pill--tagged mir-pill--avatar" key={id}>
-                        <img src={AVATARS[id].chip} alt="" width={30} height={30} />
-                        {AVATARS[id].name}
-                      </button>
-                    ))}
-                  </>
+                  ))
                 ) : (
-                  <>
-                    <button type="button" className="mir-pill">
-                      <MagicWand size={20} />
-                      Add style
-                    </button>
-                    <button type="button" className="mir-pill" onClick={configure}>
-                      <UserCircle size={20} />
-                      Add avatars
-                    </button>
-                  </>
+                  <button type="button" className="mir-pill" onClick={configure}>
+                    <AvatarsAdd size={20} />
+                    Add avatars
+                  </button>
                 )}
               </div>
 
@@ -158,22 +145,22 @@ export function HomePrompt({ onCreate }: { onCreate: () => void }) {
                 onClick={onCreate}
               >
                 Create my video
-                <ArrowRight size={20} weight="bold" />
+                <ArrowRightThin size={20} />
               </button>
             </div>
           </div>
 
           <div className="mir-home__modes">
-            <button type="button" className="mir-mode mir-mode--active">
-              <SquaresFour size={16} />
+            <button type="button" className="mir-mode">
+              <CreateTemplate size={16} />
               Create
             </button>
             <button type="button" className="mir-mode">
-              <PencilSimpleLine size={16} />
+              <EditBare size={16} />
               Edit
             </button>
             <button type="button" className="mir-mode">
-              <Lightbulb size={16} />
+              <TipLamp size={16} />
               Mirage’s choice
             </button>
           </div>

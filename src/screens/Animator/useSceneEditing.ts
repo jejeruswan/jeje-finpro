@@ -11,6 +11,7 @@ import {
   autoAreaName,
   clipText,
   marksToRuns,
+  scriptWindow,
   speak,
   subjectsAt,
 } from './data';
@@ -322,6 +323,32 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     [patchRow, rowOfScript],
   );
 
+  /** Add a fresh line to `rowId` at `start`. The window is sized to fit the
+   *  words (scriptWindow) and clamped against the lane's neighbours; a click
+   *  inside a clip, or in a gap too small to hold a line, adds nothing. */
+  const addScript = useCallback(
+    (rowId: string, start: number, text: string): string | null => {
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+      const row = rows.find((r) => r.id === rowId);
+      if (!row) return null;
+      const at = Math.min(Math.max(0, start), duration - MIN_CLIP_SEC);
+      if (row.scripts.some((c) => at > c.start - MIN_CLIP_SEC && at < c.end)) return null;
+      const nextStart = row.scripts.reduce(
+        (m, c) => (c.start >= at ? Math.min(m, c.start) : m),
+        duration,
+      );
+      if (nextStart - at < MIN_CLIP_SEC) return null;
+      const end = Math.min(at + scriptWindow(trimmed), nextStart);
+      const id = `${rowId}-sc-${Math.round(at * 1000)}`;
+      patchRow(rowId, (r) => ({
+        scripts: [...r.scripts, { id, start: at, end, words: speak(trimmed, at, end) }],
+      }));
+      return id;
+    },
+    [duration, patchRow, rows],
+  );
+
   /** Remove a line. Reactions it triggered stay on their lanes but stand
    *  alone — their connectors simply disappear with the parent. */
   const removeScript = useCallback(
@@ -385,27 +412,69 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     [patchRow, rowOfInteraction],
   );
 
-  /** Add a reaction to `rowId`, attributed to the line spoken at that moment
-   *  when there is one, so the connector it draws is meaningful immediately. */
-  const addInteraction = useCallback(
-    (rowId: string, at: number, triggerId?: string) => {
-      const id = `${rowId}-i-${Math.round(at * 1000)}`;
+  /** Rename a gesture or write its description — the identity edits that don't
+   *  touch the emoji itself, which stays with `setInteractionEmoji`. */
+  const patchInteraction = useCallback(
+    (id: string, patch: Partial<Pick<Interaction, 'label' | 'description'>>) => {
+      const rowId = rowOfInteraction(id);
+      if (!rowId) return;
       patchRow(rowId, (row) => ({
+        interactions: row.interactions.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+      }));
+    },
+    [patchRow, rowOfInteraction],
+  );
+
+  /** Whether `rowId`'s reaction lane has room for a new chip at `at` — the
+   *  same test addInteraction applies, exposed so menus can hide the cast
+   *  members that moment has no room for. */
+  const canAddInteraction = useCallback(
+    (rowId: string, at: number): boolean => {
+      const row = rows.find((r) => r.id === rowId);
+      if (!row) return false;
+      const start = Math.min(Math.max(0, at), duration - MIN_CLIP_SEC);
+      if (row.interactions.some((i) => start > i.start - MIN_CLIP_SEC && start < i.end)) return false;
+      const nextStart = row.interactions.reduce(
+        (m, i) => (i.start >= start ? Math.min(m, i.start) : m),
+        duration,
+      );
+      return nextStart - start >= MIN_CLIP_SEC;
+    },
+    [duration, rows],
+  );
+
+  /** Add a reaction to `rowId`, attributed to the line spoken at that moment
+   *  when there is one, so the connector it draws is meaningful immediately.
+   *  The 2s default window parks against the lane's next neighbour; a spot
+   *  that cannot hold even a minimum chip adds nothing and returns null. */
+  const addInteraction = useCallback(
+    (rowId: string, at: number, triggerId?: string, gesture?: { emoji: string; label: string }) => {
+      const row = rows.find((r) => r.id === rowId);
+      if (!row) return null;
+      const start = Math.min(Math.max(0, at), duration - MIN_CLIP_SEC);
+      if (row.interactions.some((i) => start > i.start - MIN_CLIP_SEC && start < i.end)) return null;
+      const nextStart = row.interactions.reduce(
+        (m, i) => (i.start >= start ? Math.min(m, i.start) : m),
+        duration,
+      );
+      if (nextStart - start < MIN_CLIP_SEC) return null;
+      const id = `${rowId}-i-${Math.round(start * 1000)}`;
+      patchRow(rowId, (r) => ({
         interactions: [
-          ...row.interactions,
+          ...r.interactions,
           {
             id,
-            emoji: '👀',
-            label: ':eyes',
-            start: Math.min(Math.max(0, at), duration - 2),
-            end: Math.min(Math.max(0, at) + 2, duration),
+            emoji: gesture?.emoji ?? '👀',
+            label: gesture?.label ?? ':eyes',
+            start,
+            end: Math.min(start + 2, nextStart),
             triggerId,
           } satisfies Interaction,
         ],
       }));
       return id;
     },
-    [duration, patchRow],
+    [duration, patchRow, rows],
   );
 
   const removeInteraction = useCallback(
@@ -464,6 +533,7 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     splitShot,
     removeShot,
     // script
+    addScript,
     retimeScript,
     moveScript,
     editScript,
@@ -472,6 +542,8 @@ export function useSceneEditing(duration = SCENE_DURATION) {
     retimeInteraction,
     moveInteraction,
     setInteractionEmoji,
+    patchInteraction,
+    canAddInteraction,
     addInteraction,
     removeInteraction,
     setTrigger,

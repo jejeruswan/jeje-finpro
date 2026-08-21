@@ -11,8 +11,22 @@ export type { IconProps } from './types';
 //   import { Edit } from '@/assets/icons';
 //   <Edit size={24} color="var(--color-icon-primary)" />
 export { AttentionEye, CameraLens, Edit, InteractionNode, ViewfinderReticle };
+export { CursorAddBadge } from './CursorAddBadge';
+export { ChatShine, DownloadTray, RedoArrow, SidebarPanel, UndoArrow } from './HeaderGlyphs';
+export {
+  ArrowRightThin,
+  AvatarsAdd,
+  ChevronDownSmall,
+  CreateTemplate,
+  EditBare,
+  FolderAdd,
+  HouseNav,
+  InfoRing,
+  PaperclipTilt,
+  TipLamp,
+} from './HomeGlyphs';
 export { InteractionOrbit } from './InteractionOrbit';
-export { MarkGlyph } from './MarkGlyph';
+export { AreaFlower, MarkGlyph } from './MarkGlyph';
 export { ScriptScroll } from './ScriptScroll';
 
 // Name-based lookup — for rendering icons dynamically from data.

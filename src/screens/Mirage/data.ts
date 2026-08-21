@@ -1,11 +1,14 @@
 /* ============================================================================
-   Mirage hi-fi prototype — sample data for "I let AI plan my wedding".
-   Content, timecodes and copy are pulled from the Figma frames Raw 01–09
+   Mirage hi-fi prototype — sample data for "Vintage shopping with my sister".
+   Scenes, timecodes and copy come from the real take (public/assets/video.mp4,
+   3:00): Evelyn and Emily getting ready in Evelyn's New York apartment, then
+   heading out vintage shopping. Scene boundaries were read off the footage's
+   actual cuts; the layout follows the Figma frames Raw 01–09
    (file mN4cVt7MXQjJ1y5pOgGu4E). Scenes drive the Level 1 corkboard, the
    Level 2 script pages and the drawer; the prompt screen has its own copy.
    ============================================================================ */
 
-export type AvatarId = 'olivia' | 'blake' | 'jess' | 'kai';
+export type AvatarId = 'evelyn' | 'emily' | 'olivia' | 'blake' | 'jess' | 'kai';
 
 export type Avatar = {
   id: AvatarId;
@@ -18,6 +21,18 @@ export type Avatar = {
 
 /** The user's avatar library — what the cast editor's "+" can pull from. */
 export const AVATARS: Record<AvatarId, Avatar> = {
+  evelyn: {
+    id: 'evelyn',
+    name: 'Evelyn',
+    chip: '/assets/evelyn.jpg',
+    portrait: '/assets/evelyn.jpg',
+  },
+  emily: {
+    id: 'emily',
+    name: 'Emily',
+    chip: '/assets/emily.jpg',
+    portrait: '/assets/emily.jpg',
+  },
   olivia: {
     id: 'olivia',
     name: 'Olivia',
@@ -71,13 +86,13 @@ export const castOf = (id: AvatarId): CastMember => ({
 export const PROMPT_PLACEHOLDER = 'How can I help you today?';
 
 export const PROMPT_TEXT =
-  'I want to make a cinematic vlog-style video of my avatars Olivia and Blake ' +
-  'who are a couple and they are talking about “how they let AI plan their ' +
-  'wedding”. It should have a handheld camera feel, warm morning kitchen ' +
-  'light, shallow depth of field. They should be sitting at a kitchen table, ' +
-  'laptop open between them, coffee mugs and a scattered wedding binder in frame.';
+  'I want to generate a raw footage of me and my sister vlogging in my New York apartment ' +
+  'before we head out vintage shopping. ' +
+  'It should be a handheld selfie-style footage of the two of us (Evelyn and Emily) getting ' +
+  'ready, trying on sunglasses, talking about the live show we’re hosting, and ' +
+  'heading out into the city.';
 
-export const PROJECT_TITLE = 'I let AI plan my wedding';
+export const PROJECT_TITLE = 'Vintage shopping with my sister';
 
 export const SIDEBAR_PROJECTS: { thumb: string; title: string; meta: string }[] = [
   { thumb: '/assets/projects/p1.png', title: 'Nature vitamins', meta: 'Today ⋅ 2 videos' },
@@ -119,82 +134,118 @@ const scene = (
   cast: CastMember[],
 ): Scene => ({ id, num, title, summary, durationSec, thumb, cast });
 
-/** An unclaimed person detected in the user's own footage. */
-const person = (id: string, n: number): CastMember => ({
-  id,
-  name: `Person ${n}`,
-  provenance: 'detected',
-});
-
+/* The 12 scenes of the real take (public/assets/video.mp4, 3:00): two sisters
+   getting ready in Evelyn's New York apartment, then heading out vintage
+   shopping. Durations are the actual cut points of the footage; thumbnails are
+   each scene's first frame. */
 export const SCENES: Scene[] = [
-  scene('intro', 1, 'Intro', 'Jess talks about the content of the video', 10, '/assets/frames/scene-f1.jpg', [castOf('olivia')]),
   scene(
-    'idea',
-    2,
-    'The Idea',
-    'Eleven weeks to wedding date and have made almost no decisions.',
-    12,
-    '/assets/frames/scene-f2.jpg',
-    [castOf('olivia')],
-  ),
-  scene(
-    'rules',
-    3,
-    'Setting the Rules',
-    'Nothing illegal, nothing that costs more than the existing budget, and the officiant stays human.',
-    8,
-    '/assets/frames/scene-f3.jpg',
-    [castOf('olivia')],
-  ),
-  scene(
-    'venue',
-    4,
-    'Choosing venue and menu',
-    'Feeds it their constraints and gets back five options. Three are reasonable. One is a botanical ' +
-      'garden that’s already booked. One is the top level of a parking structure, pitched with genuinely persuasive...',
-    15,
-    '/assets/frames/scene-f4.jpg',
-    [castOf('olivia')],
-  ),
-  scene(
-    'fiance',
-    5,
-    'Telling my fiance',
-    'Confession day!!!!',
-    10,
-    '/assets/frames/scene-f5.jpg',
-    [castOf('olivia'), castOf('blake')],
-  ),
-  scene(
-    'vendors',
-    6,
-    'The Vendor Calls',
-    'The AI drafts every email and one voicemail script. The florist thinks Olivia wrote it. She did not.',
-    9,
-    '/assets/frames/scene-f6.jpg',
-    [castOf('olivia'), castOf('blake')],
-  ),
-  // Shot on the couple's own phone — its people are DETECTED, not generated,
-  // until the user claims them.
-  scene(
-    'rehearsal',
+    'welcome',
+    1,
+    'Welcome to the Apartment',
+    'Evelyn opens the vlog with a big welcome shrug while Emily teases her from behind the camera: “why do you act like you’ve never vlogged before?”',
     7,
-    'Dress Rehearsal',
-    'Raw footage from the rehearsal dinner — a full run-through, timed to the minute by the schedule the model produced.',
-    11,
-    '/assets/frames/scene-f7.jpg',
-    [person('p1', 1), person('p2', 2)],
+    '/assets/thumbnails/thumbnail-1.jpg',
+    [castOf('evelyn')],
   ),
-  // Mixed provenance: real footage of a person plus a generated avatar
-  // composited into the same scene.
   scene(
-    'closing',
+    'emily-joins',
+    2,
+    'Emily Joins the Party',
+    'Quick cut to both sisters laughing by the window. Emily dances into frame.',
+    3,
+    '/assets/thumbnails/thumbnail-2.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'game-plan',
+    3,
+    'Hallway Game Plan',
+    'The plan: vintage shopping in New York. Emily wants a Fendi bag so bad; the rain stopped ten minutes ago, so that’s the sign.',
+    20,
+    '/assets/thumbnails/thumbnail-3.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'mirror-check',
+    4,
+    'Mirror Check',
+    'Full length mirror outfit check. Evelyn already kind of wishes she wore different pants, but this will do.',
+    7,
+    '/assets/thumbnails/thumbnail-4.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'sunglasses',
+    5,
+    'Sunglasses Try On',
+    'Evelyn models her big gradient sunglasses, wonders what she even wants from the shop, and realizes she doesn’t have her phone.',
+    17,
+    '/assets/thumbnails/thumbnail-5.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'emily-mic',
+    6,
+    'Emily Takes the Mic',
+    'Emily’s wishlist: a bag for her, and if not, maybe some cool sunnies.',
+    10,
+    '/assets/thumbnails/thumbnail-6.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'group-chat',
+    7,
+    'Glasses & the Group Chat',
+    'The glasses tightening debate, then news from the show producer group chat: they’re hosting a live show in New York like a YouTube video, IRL.',
+    44,
+    '/assets/thumbnails/thumbnail-7.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'camera-roll',
     8,
-    'Closing',
-    'Would they do it again? A verdict, and what they’d never hand over next time.',
+    'Camera Roll Reactions',
+    'Emily holds up the mirror photo: she looks good, and Evelyn is making the ugliest face in the back. On purpose, allegedly.',
+    13,
+    '/assets/thumbnails/thumbnail-8.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'final-poses',
+    9,
+    'Final Poses & Hair Fix',
+    'Sunglasses go back on for a round of poses, then Evelyn’s hair goes up in the white claw clip, time to head out.',
     14,
-    '/assets/frames/scene-f8.jpg',
-    [castOf('olivia'), person('p3', 1)],
+    '/assets/thumbnails/thumbnail-9.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'lego-wall',
+    10,
+    'The Lego Art Wall',
+    'Comment down below: should the wall frames and the Lego collection stay or go for a clean white background?',
+    22,
+    '/assets/thumbnails/thumbnail-10.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'out-the-door',
+    11,
+    'Out the Door',
+    'Sidewalk transition and into the back seat, outfit regret sets in immediately.',
+    7,
+    '/assets/thumbnails/thumbnail-11.jpg',
+    [castOf('evelyn'), castOf('emily')],
+  ),
+  scene(
+    'backseat',
+    12,
+    'Backseat Verdict',
+    'It’s 90 degrees outside and Evelyn is wearing long sleeves, top and bottom. They’ll be back home so she can change.',
+    16,
+    '/assets/thumbnails/thumbnail-12.jpg',
+    [castOf('evelyn'), castOf('emily')],
   ),
 ];
 
@@ -225,19 +276,18 @@ export function sceneStarts(scenes: Scene[]): number[] {
 export const boardMeta = (scenes: Scene[]): string =>
   `${scenes.length} scenes · ${formatTimecode(scenes.reduce((t, s) => t + s.durationSec, 0))}`;
 
-/** A user-inserted scene (the + node between cards). It cooks like a
- *  generated one; a prompt from the reticle's insertion box becomes its
- *  working summary until the render lands. */
-export function makeInsertedScene(id: string, prompt?: string): Scene {
+/** A user-inserted scene (the + node between cards): born EMPTY, straight
+ *  into the card's edit posture — the form IS the prompt box. It only starts
+ *  cooking once the ✓ commits it. */
+export function makeBlankScene(id: string): Scene {
   return scene(
     id,
     0, // renumbered by the caller after insertion
-    'New scene',
-    prompt?.trim() ||
-      'Describe what happens here — Mirage will stage and render it in the background.',
-    10,
-    '/assets/frames/scene-f4.jpg',
-    [castOf('olivia'), castOf('blake')],
+    '',
+    '',
+    5,
+    '/assets/thumbnails/thumbnail-4.jpg',
+    [],
   );
 }
 

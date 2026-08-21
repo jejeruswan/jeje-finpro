@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { MagnifyingGlassMinus, MagnifyingGlassPlus, ArrowsOutLineHorizontal } from '@phosphor-icons/react';
-import { IconButton } from '../../../ui/IconButton';
 import { RAIL, formatTimecode, rulerStep } from '../data';
 
 /**
@@ -23,8 +21,6 @@ export function TimelineRuler({
   pad,
   playheadOffset,
   onSeek,
-  onZoomBy,
-  onZoomToFit,
 }: {
   time: number;
   duration: number;
@@ -35,8 +31,6 @@ export function TimelineRuler({
   /** The playhead's x inside the viewport (rail excluded). */
   playheadOffset: number;
   onSeek: (seconds: number) => void;
-  onZoomBy: (factor: number) => void;
-  onZoomToFit: () => void;
 }) {
   const stripRef = useRef<HTMLDivElement | null>(null);
   const scrubbing = useRef(false);
@@ -96,20 +90,6 @@ export function TimelineRuler({
 
   return (
     <div className="anim-ruler-row">
-      {/* Timeline zoom floats ABOVE the tick strip, left-aligned to the same
-          16px inset as the canvas's floating pills. */}
-      <div className="anim-tlzoom surface">
-        <IconButton size={24} variant="ghost" aria-label="Zoom out timeline" onClick={() => onZoomBy(1 / 1.4)}>
-          <MagnifyingGlassMinus size={14} />
-        </IconButton>
-        <IconButton size={24} variant="ghost" aria-label="Fit timeline to width" onClick={onZoomToFit}>
-          <ArrowsOutLineHorizontal size={14} />
-        </IconButton>
-        <IconButton size={24} variant="ghost" aria-label="Zoom in timeline" onClick={() => onZoomBy(1.4)}>
-          <MagnifyingGlassPlus size={14} />
-        </IconButton>
-      </div>
-
       <div
         className="anim-ruler"
         ref={stripRef}

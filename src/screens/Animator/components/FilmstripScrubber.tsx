@@ -1,18 +1,19 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 export type StripScene = { id: string; thumb: string };
 
 /**
- * The embedded filmstrip scrubber (Figma 673-130315): the take's time player,
- * drawn INSIDE the video frame's bottom band. One thumb per scene, in order —
+ * The filmstrip scrubber (Figma 756-165386): the take's time player, sitting
+ * ABOVE the video frame, left-aligned with it. One thumb per scene, in order —
  * the strip IS the take, so position along it is position in time:
  *
- *  - the cyan pin is the playhead, gliding across the thumbs during playback
- *  - the thumb whose segment holds the playhead wears the cyan stroke, and the
- *    "N — total" index at the frame's right edge names that segment
+ *  - the cyan hairline is the playhead, gliding across the thumbs during
+ *    playback; the thumb whose segment holds it wears the cyan stroke
  *  - click a thumb to jump to that scene's start; drag anywhere to scrub
  *  - double-click a thumb to leave the canvas and fall back to the corkboard
+ *  - when there are more thumbs than fit the frame's width, the strip clips
+ *    and an edge shadow marks each side with scenes out of view
  */
 export function FilmstripScrubber({
   scenes,
@@ -38,6 +39,7 @@ export function FilmstripScrubber({
    *  scene — the thumb that was double-clicked, or the playhead's segment. */
   onExit?: (sceneId?: string) => void;
 }) {
+  const clipRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const scrubbing = useRef(false);
 
@@ -58,6 +60,32 @@ export function FilmstripScrubber({
   const within = segLen > 0 ? Math.min(1, (clamped - bounds[segment]) / segLen) : 0;
   const frac = n > 0 ? (segment + within) / n : 0;
 
+  /** Edge shadows (Figma "Shadow" 756-165406/165408) — shown only on a side
+   *  that actually has thumbs clipped out of view. The clip window follows the
+   *  playhead so the active thumb is never the one out of sight. */
+  const [shade, setShade] = useState({ left: false, right: false });
+  useLayoutEffect(() => {
+    const clip = clipRef.current;
+    if (!clip) return;
+    const follow = () => {
+      const active = clip.querySelector<HTMLElement>(`[data-strip-idx="${segment}"]`);
+      if (active) {
+        const lo = active.offsetLeft - 4;
+        const hi = active.offsetLeft + active.offsetWidth + 4;
+        if (lo < clip.scrollLeft) clip.scrollLeft = lo;
+        else if (hi > clip.scrollLeft + clip.clientWidth) clip.scrollLeft = hi - clip.clientWidth;
+      }
+      setShade({
+        left: clip.scrollLeft > 1,
+        right: clip.scrollLeft + clip.clientWidth < clip.scrollWidth - 1,
+      });
+    };
+    follow();
+    const ro = new ResizeObserver(follow);
+    ro.observe(clip);
+    return () => ro.disconnect();
+  }, [segment]);
+
   /** Continuous scrub: pointer x picks a thumb and a fraction WITHIN it, and
    *  time is read back through the same piecewise map the pin rides. */
   const seekAt = (clientX: number) => {
@@ -70,82 +98,84 @@ export function FilmstripScrubber({
   };
 
   return (
-    <>
-      {/* Bottom shade so the strip reads over any picture. */}
-      <div className="anim-strip-shade" aria-hidden />
-
-      <div
-        className="anim-strip"
-        ref={rowRef}
-        role="slider"
-        tabIndex={0}
-        aria-label="Scrub the take"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(time * 100) / 100}
-        /* On the row, not the thumbs: pointer capture (below) retargets click
-           events to the row, so a thumb-level dblclick handler never fires.
-           Exit lands on the scene that was double-clicked — or, from the gaps,
-           on whichever scene holds the playhead. */
-        onDoubleClick={(e) => {
-          if (!onExit) return;
-          const hit = (e.target as HTMLElement).closest('[data-strip-idx]');
-          const i = hit instanceof HTMLElement ? Number(hit.dataset.stripIdx) : segment;
-          onExit(scenes[i]?.id);
-        }}
-        onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
-          if (e.button !== 0) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          scrubbing.current = true;
-          onPause();
-          // Grabbing the pin starts a drag from wherever the playhead already
-          // is — no jump. Pressing a thumb jumps to that SCENE's start;
-          // presses in the gaps scrub to the exact fraction under the pointer.
-          const target = e.target as HTMLElement;
-          if (!target.closest('.anim-strip__pin')) {
-            const hit = target.closest('[data-strip-idx]');
-            if (hit instanceof HTMLElement && duration > 0) {
-              const i = Number(hit.dataset.stripIdx);
-              onSeek(bounds[i] ?? 0);
-            } else {
-              seekAt(e.clientX);
+    <div className="anim-strip-band">
+      <div className="anim-strip-clip" ref={clipRef}>
+        <div
+          className="anim-strip"
+          ref={rowRef}
+          role="slider"
+          tabIndex={0}
+          aria-label="Scrub the take"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(time * 100) / 100}
+          /* On the row, not the thumbs: pointer capture (below) retargets click
+             events to the row, so a thumb-level dblclick handler never fires.
+             Exit lands on the scene that was double-clicked — or, from the gaps,
+             on whichever scene holds the playhead. */
+          onDoubleClick={(e) => {
+            if (!onExit) return;
+            const hit = (e.target as HTMLElement).closest('[data-strip-idx]');
+            const i = hit instanceof HTMLElement ? Number(hit.dataset.stripIdx) : segment;
+            onExit(scenes[i]?.id);
+          }}
+          onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+            if (e.button !== 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            scrubbing.current = true;
+            onPause();
+            // Grabbing the pin starts a drag from wherever the playhead already
+            // is — no jump. Pressing a thumb jumps to that SCENE's start;
+            // presses in the gaps scrub to the exact fraction under the pointer.
+            const target = e.target as HTMLElement;
+            if (!target.closest('.anim-strip__pin')) {
+              const hit = target.closest('[data-strip-idx]');
+              if (hit instanceof HTMLElement && duration > 0) {
+                const i = Number(hit.dataset.stripIdx);
+                onSeek(bounds[i] ?? 0);
+              } else {
+                seekAt(e.clientX);
+              }
             }
-          }
-        }}
-        onPointerMove={(e) => {
-          if (scrubbing.current) seekAt(e.clientX);
-        }}
-        onPointerUp={(e) => {
-          scrubbing.current = false;
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }
-        }}
-        onPointerCancel={() => {
-          scrubbing.current = false;
-        }}
-      >
-        {scenes.map((s, i) => (
-          <button
-            type="button"
-            key={s.id}
-            data-scene={s.id}
-            data-strip-idx={i}
-            className={`anim-strip__thumb ${i === segment ? 'anim-strip__thumb--active' : ''}`}
-            aria-label={`Scene ${i + 1}`}
-          >
-            <img src={s.thumb} alt="" draggable={false} />
-          </button>
-        ))}
-        {/* The playhead pin: a dot-topped hairline riding the strip. */}
-        <span className="anim-strip__pin" style={{ left: `${frac * 100}%` }} aria-hidden />
+          }}
+          onPointerMove={(e) => {
+            if (scrubbing.current) seekAt(e.clientX);
+          }}
+          onPointerUp={(e) => {
+            scrubbing.current = false;
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+          }}
+          onPointerCancel={() => {
+            scrubbing.current = false;
+          }}
+        >
+          {scenes.map((s, i) => (
+            <button
+              type="button"
+              key={s.id}
+              data-scene={s.id}
+              data-strip-idx={i}
+              className={`anim-strip__thumb ${i === segment ? 'anim-strip__thumb--active' : ''}`}
+              aria-label={`Scene ${i + 1}`}
+            >
+              <img src={s.thumb} alt="" draggable={false} />
+            </button>
+          ))}
+          {/* The playhead pin: a rounded cyan hairline overshooting the thumbs.
+              Clamped a hair in from both ends so the clip window never shaves
+              half the line off at the take's very start or end. */}
+          <span
+            className="anim-strip__pin"
+            style={{ left: `clamp(2px, ${frac * 100}%, calc(100% - 2px))` }}
+            aria-hidden
+          />
+        </div>
       </div>
 
-      <span className="anim-strip__index" aria-hidden>
-        <span className="anim-strip__index-now">{segment + 1}</span>
-        {' — '}
-        {scenes.length}
-      </span>
-    </>
+      {shade.left && <span className="anim-strip__shadow anim-strip__shadow--l" aria-hidden />}
+      {shade.right && <span className="anim-strip__shadow anim-strip__shadow--r" aria-hidden />}
+    </div>
   );
 }
