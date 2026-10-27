@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { RAIL, formatTimecode, rulerStep } from '../data';
+import { toLocal } from '../../../uiScale';
 
 /**
  * The ruler, and the scrub surface.
@@ -62,7 +63,7 @@ export function TimelineRuler({
     const el = stripRef.current;
     if (!el) return 0;
     const rect = el.getBoundingClientRect();
-    return (clientX - rect.left - RAIL - pad + scrollLeft) / pxPerSec;
+    return (toLocal(clientX - rect.left) - RAIL - pad + scrollLeft) / pxPerSec;
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {

@@ -46,7 +46,7 @@
   /* Chat sidebar width + the shared easing for its collapse. */
   --chat-w: 338px;
   --chat-anim: 280ms cubic-bezier(0.4, 0, 0.2, 1);
-  height: 100dvh;
+  height: calc(100dvh / var(--ui-scale, 1)); /* viewport units scale with #root's zoom */
   display: flex;
   padding: var(--space-16); /* consistent frame around the whole window */
   background: var(--color-bg-secondary);
@@ -849,7 +849,7 @@ body.is-row-resizing, body.is-row-resizing * { cursor: row-resize !important; us
   right: var(--space-16);
   z-index: 4;
   width: 312px;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh / var(--ui-scale, 1) - 120px);
   display: flex;
   flex-direction: column;
   background: var(--color-surface);

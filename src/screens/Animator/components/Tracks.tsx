@@ -10,6 +10,7 @@ import type {
   TimelineSelection,
 } from '../data';
 import { useClipDrag } from '../useClipDrag';
+import { toLocal } from '../../../uiScale';
 import type { SceneEditing } from '../useSceneEditing';
 
 /* Every clip is its own component: each one owns a drag gesture, and a hook
@@ -126,7 +127,7 @@ function AttentionLane({
   /** Pointer x inside the band → seconds. */
   const timeAt = (e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    return (e.clientX - rect.left) / pxPerSec;
+    return toLocal(e.clientX - rect.left) / pxPerSec;
   };
 
   return (
@@ -449,13 +450,13 @@ function AddableLane({
         onPointerMove={(e) => {
           if (!overEmpty(e)) return setSpot(null);
           const rect = e.currentTarget.getBoundingClientRect();
-          setSpot({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          setSpot({ x: toLocal(e.clientX - rect.left), y: toLocal(e.clientY - rect.top) });
         }}
         onPointerLeave={() => setSpot(null)}
         onClick={(e) => {
           if (!overEmpty(e)) return;
           const rect = e.currentTarget.getBoundingClientRect();
-          onSpawn((e.clientX - rect.left - pad) / pxPerSec);
+          onSpawn((toLocal(e.clientX - rect.left) - pad) / pxPerSec);
         }}
       >
         {children}

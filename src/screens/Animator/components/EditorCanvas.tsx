@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointer
 import { Pause, Play } from '@phosphor-icons/react';
 import { ChatShine } from '../../../assets/icons';
 import { IconButton } from '../../../ui/IconButton';
+import { toLocal } from '../../../uiScale';
 import {
   SOURCE_VIDEO,
   TAKE_CUTS,
@@ -141,13 +142,15 @@ export function EditorCanvas({
   const moveCursorTag = (e: ReactPointerEvent<HTMLElement>) => {
     const el = cursorTagRef.current;
     if (!el) return;
-    const r = e.currentTarget.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Design px throughout — the chip's own size and its transform are.
+    const r = { width: toLocal(rect.width), height: toLocal(rect.height) };
     // The chip hangs below-right of the cursor tip, per the design — but the
     // preview clips its own overflow, so near an edge the chip flips to the
     // cursor's other side instead of shearing off (and clamps as a last
     // resort, for a subject wedged into a corner).
-    const cx = e.clientX - r.left;
-    const cy = e.clientY - r.top;
+    const cx = toLocal(e.clientX - rect.left);
+    const cy = toLocal(e.clientY - rect.top);
     let x = cx + 12;
     let y = cy + 16;
     if (x + el.offsetWidth > r.width - 4) x = cx - el.offsetWidth - 12;

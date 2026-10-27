@@ -128,4 +128,7 @@
 
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; }
+/* Fit-to-window: the whole app scales from its 1728×1000 design canvas (see
+   src/uiScale.ts). */
+#root { zoom: var(--ui-scale, 1); }
 body { margin: 0; background: var(--bg); }

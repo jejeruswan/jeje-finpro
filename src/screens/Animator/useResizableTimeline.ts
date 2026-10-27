@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentPropsWithoutRef, KeyboardEvent, PointerEvent } from 'react';
+import { toLocal } from '../../uiScale';
 
 /** Natural height of the timeline: 8+8 padding + 20 ruler + 52 scene bar +
  *  3 × 104 avatar rows. Also the height a double-click on the handle restores. */
@@ -83,7 +84,7 @@ export function useResizableTimeline(natural = TIMELINE_DEFAULT_HEIGHT) {
     if (!dragRef.current.active) return;
     // Dragging up (negative delta) grows the timeline.
     const { startY, startHeight } = dragRef.current;
-    setHeight(clamp(startHeight - (e.clientY - startY)));
+    setHeight(clamp(startHeight - toLocal(e.clientY - startY)));
   };
 
   const endDrag = (e: PointerEvent<HTMLDivElement>) => {

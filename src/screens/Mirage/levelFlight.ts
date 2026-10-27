@@ -13,7 +13,13 @@
    While the flight is up, the REAL shared elements are hidden via a
    `data-morph` attribute on the zoom stage (see mirage.css); the caller drops
    the attribute when the flight resolves and crossfades the overlay away.
+
+   The overlay sits outside the zoomed #root, so it works in screen px: rects
+   come in that way already, but radii (computed styles) and fixed offsets are
+   design px and go through `toScreen` / `uiScale`.
    ---------------------------------------------------------------------------- */
+
+import { toScreen, uiScale } from '../../uiScale';
 
 export type RectMap = Map<string, DOMRect>;
 
@@ -64,7 +70,7 @@ function mkOverlay(clip?: FlightClip): HTMLElement {
     const r = clip.rect;
     overlay.style.clipPath = `inset(${r.top}px ${window.innerWidth - r.right}px ${
       window.innerHeight - r.bottom
-    }px ${r.left}px round 0 0 ${clip.radius} ${clip.radius})`;
+    }px ${r.left}px round 0 0 ${toScreen(clip.radius)} ${toScreen(clip.radius)})`;
   }
   document.body.appendChild(overlay);
   return overlay;
@@ -77,7 +83,7 @@ function mkClone(overlay: HTMLElement, src: string, r: DOMRect, radius: string):
   d.style.top = `${r.top}px`;
   d.style.width = `${r.width}px`;
   d.style.height = `${r.height}px`;
-  d.style.borderRadius = radius;
+  d.style.borderRadius = toScreen(radius);
   const img = document.createElement('img');
   img.src = src;
   img.draggable = false;
@@ -110,8 +116,8 @@ function fly(
   const timing = { duration: opts.duration ?? MORPH_MS, delay: opts.delay ?? 0, fill: 'both' as const };
   const anim = el.animate(
     [
-      frame(from, opts.radius?.[0] ?? el.style.borderRadius, opts.fade === 'in' ? 0 : 1),
-      frame(to, opts.radius?.[1] ?? el.style.borderRadius, opts.fade === 'out' ? 0 : 1),
+      frame(from, opts.radius ? toScreen(opts.radius[0]) : el.style.borderRadius, opts.fade === 'in' ? 0 : 1),
+      frame(to, opts.radius ? toScreen(opts.radius[1]) : el.style.borderRadius, opts.fade === 'out' ? 0 : 1),
     ],
     { ...timing, easing: opts.spring ? SPRING : EASE },
   );
@@ -124,7 +130,7 @@ function fly(
 }
 
 const below = (anchor: DOMRect, slot: DOMRect) =>
-  new DOMRect(slot.left, anchor.bottom + 24, slot.width, slot.height);
+  new DOMRect(slot.left, anchor.bottom + 24 * uiScale(), slot.width, slot.height);
 
 export type FlightScene = { id: string; thumb: string };
 
@@ -184,7 +190,7 @@ export async function flightIn(args: {
     } else {
       // The card was scrolled out of the L1 viewport: settle into the slot
       // from just below it instead of flying across the screen.
-      const start = new DOMRect(slot.left, slot.top + 16, slot.width, slot.height);
+      const start = new DOMRect(slot.left, slot.top + 16 * uiScale(), slot.width, slot.height);
       const c = mkClone(overlay, thumb, start, args.radii.slot);
       c.style.zIndex = '2';
       flights.push(fly(c, start, slot, { fade: 'in', delay: MORPH_MS * 0.3, duration: MORPH_MS * 0.6 }));
@@ -276,7 +282,7 @@ export async function flightOut(args: {
       );
     } else if (slot) {
       // Its card ends up outside the L1 viewport: drift down and out.
-      const end = new DOMRect(slot.left, slot.top + 16, slot.width, slot.height);
+      const end = new DOMRect(slot.left, slot.top + 16 * uiScale(), slot.width, slot.height);
       const c = mkClone(overlay, thumb, slot, args.radii.slot);
       flights.push(fly(c, slot, end, { fade: 'out', duration: MORPH_MS * 0.55 }));
     }

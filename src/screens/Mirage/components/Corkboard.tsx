@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { ListBullets, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ViewfinderReticle } from '../../../assets/icons';
+import { toLocal } from '../../../uiScale';
 import {
   AVATARS,
   boardMeta,
@@ -270,8 +271,8 @@ export function Corkboard({
       return;
     }
     lastScroll.current = Date.now();
-    const dx = e.clientX - d.startX;
-    const dy = Math.max(-14, Math.min(14, e.clientY - d.startY));
+    const dx = toLocal(e.clientX - d.startX);
+    const dy = Math.max(-14, Math.min(14, toLocal(e.clientY - d.startY)));
     d.el.style.transform = `translate(${dx}px, ${dy}px)`;
 
     const row = rowRef.current;
@@ -286,14 +287,16 @@ export function Corkboard({
     let idx = 0;
     for (const s of others) {
       const el = cardEls.current[s.id];
-      if (el && e.clientX > el.getBoundingClientRect().left + el.offsetWidth / 2) idx++;
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (e.clientX > r.left + r.width / 2) idx++;
     }
     dropBefore.current = others[idx]?.id ?? null;
     const anchor = idx === 0 ? cardEls.current[others[0]?.id ?? ''] : cardEls.current[others[idx - 1].id];
     if (anchor) {
       const ar = anchor.getBoundingClientRect();
-      const boundary = idx === 0 ? ar.left - 9 : ar.right + 9;
-      setDropX(boundary - rr.left + row.scrollLeft);
+      const boundary = toLocal((idx === 0 ? ar.left : ar.right) - rr.left) + (idx === 0 ? -9 : 9);
+      setDropX(boundary + row.scrollLeft);
     }
   };
 
@@ -328,7 +331,7 @@ export function Corkboard({
     const rowRect = row.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     const delta = r.left + r.width / 2 - (rowRect.left + rowRect.width / 2);
-    row.scrollTo({ left: row.scrollLeft + delta, behavior });
+    row.scrollTo({ left: row.scrollLeft + toLocal(delta), behavior });
   }, []);
 
   /* --- Reticle tracking --------------------------------------------------------
@@ -441,8 +444,8 @@ export function Corkboard({
           ret.classList.add('mir-reticle--free');
         }
         const b = board.getBoundingClientRect();
-        ret.style.left = `${e.clientX - b.left}px`;
-        ret.style.top = `${e.clientY - b.top}px`;
+        ret.style.left = `${toLocal(e.clientX - b.left)}px`;
+        ret.style.top = `${toLocal(e.clientY - b.top)}px`;
       }
       if (!freeRef.current) {
         freeRef.current = true;

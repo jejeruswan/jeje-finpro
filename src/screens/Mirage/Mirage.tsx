@@ -18,6 +18,7 @@ import {
 import { useMaterialization } from './useMaterialization';
 import { useZoomGesture, type ZoomFocus } from './useZoomGesture';
 import { EASE, MORPH_MS, flightIn, flightOut, grabVideoFrame, type FlightClip, type RectMap } from './levelFlight';
+import { toLocal } from '../../uiScale';
 import './mirage.css';
 
 /* ----------------------------------------------------------------------------
@@ -144,8 +145,8 @@ export function Mirage() {
     const stage = stageRef.current;
     if (!stage) return;
     const r = stage.getBoundingClientRect();
-    stage.style.setProperty('--zoom-x', `${focus.x - r.left}px`);
-    stage.style.setProperty('--zoom-y', `${focus.y - r.top}px`);
+    stage.style.setProperty('--zoom-x', `${toLocal(focus.x - r.left)}px`);
+    stage.style.setProperty('--zoom-y', `${toLocal(focus.y - r.top)}px`);
   }, []);
 
   const focusOf = (el: HTMLElement): ZoomFocus => {

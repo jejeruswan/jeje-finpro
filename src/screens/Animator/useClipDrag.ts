@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { toLocal } from '../../uiScale';
 
 export type DragKind = 'move' | 'start' | 'end';
 
@@ -51,7 +52,7 @@ export function useClipDrag(
       // A press's sub-3px wobble is not an edit: committing it would nudge the
       // clip (and rerender the take) on what the hand meant as a click.
       if (!moved.current) return;
-      commit(d.kind, d.base + (e.clientX - d.x0) / pxRef.current);
+      commit(d.kind, d.base + toLocal(e.clientX - d.x0) / pxRef.current);
     },
     onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {
       if (!drag.current) return;
